@@ -1,0 +1,25 @@
+# config.yaml.example
+#
+# Copie este arquivo para ~/.mcp-proxy/config.yaml e descomente/ajuste
+# os campos conforme necessario. O binario cria o arquivo com defaults
+# no primeiro start se ele nao existir.
+#
+# Caminho padrao: ~/.mcp-proxy/config.yaml
+# Permissoes:     0600 (criado automaticamente pelo binario)
+
+# Diretorio raiz do workspace. Cada projeto vive em
+#   <workspace_path>/<project>/targets/<host>/
+# Default: ~/.mcp-proxy/workspace
+workspace_path: /home/user/.mcp-proxy/workspace
+
+# Projeto ativo (engajamento). Definido por:
+#   - CLI:  mcp-proxy project use NOME
+#   - MCP:  tool set_active_project
+# Deixe comentado ate ter um projeto criado.
+# active_project: H1-EMPRESA
+
+# Alvo ativo dentro do projeto ativo. Definido por:
+#   - CLI:  mcp-proxy target use HOST
+#   - MCP:  tool set_active_target
+# Deixe comentado ate ter um alvo adicionado.
+# active_target: api.empresa.com
