@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/isaias/network-copitlot/internal/audit"
+	"github.com/isaias/network-copitlot/internal/cli"
 	"github.com/isaias/network-copitlot/internal/config"
 	"github.com/isaias/network-copitlot/internal/mcpserver"
 	"github.com/isaias/network-copitlot/internal/projects"
@@ -42,7 +43,7 @@ func run() error {
 	if len(os.Args) < 2 {
 		return runMCPServer(active, repo, al)
 	}
-	cmd := NewRootCmd(active, repo, al)
+	cmd := cli.NewRootCmd(active, repo, al)
 	return cmd.Execute()
 }
 

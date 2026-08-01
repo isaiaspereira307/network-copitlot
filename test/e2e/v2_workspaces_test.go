@@ -1,20 +1,18 @@
-// ponytail: leaf commands inlineados; Task 19 extrai internal/cli e reusa NewRootCmd
-// ponytail: buildRoot chamado por invocacao (nao cacheado) porque pflag retem estado entre Execute
+// ponytail: testes chamam cli.NewRootCmd (mesmo wiring que main); pflag retem estado entre Execute
+// ponytail: por isso cada runCmd invoca NewRootCmd fresh, sem cache
 package e2e
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/isaias/network-copitlot/internal/audit"
+	"github.com/isaias/network-copitlot/internal/cli"
 	"github.com/isaias/network-copitlot/internal/config"
 	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/store"
-	"github.com/spf13/cobra"
 )
 
 func TestE2E_V2Workspaces(t *testing.T) {
@@ -78,7 +76,7 @@ func TestE2E_V2Workspaces(t *testing.T) {
 
 func runCmd(t *testing.T, active *projects.ActiveState, repo *projects.Repo, al *audit.Logger, args ...string) string {
 	t.Helper()
-	root := buildRoot(active, repo, al)
+	root := cli.NewRootCmd(active, repo, al)
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
 	root.SetErr(buf)
@@ -91,7 +89,7 @@ func runCmd(t *testing.T, active *projects.ActiveState, repo *projects.Repo, al 
 
 func runCmdErr(t *testing.T, active *projects.ActiveState, repo *projects.Repo, al *audit.Logger, args ...string) error {
 	t.Helper()
-	root := buildRoot(active, repo, al)
+	root := cli.NewRootCmd(active, repo, al)
 	buf := &bytes.Buffer{}
 	root.SetOut(buf)
 	root.SetErr(buf)
@@ -104,97 +102,4 @@ func mustExist(t *testing.T, p string) {
 	if _, err := os.Stat(p); err != nil {
 		t.Errorf("expected %s: %v", p, err)
 	}
-}
-
-// buildRoot replica minima de cmd/mcp-proxy/root.go: 4 leaf commands cobrem o fluxo E2E.
-// Task 19 extrai internal/cli e este builder vira NewRootCmd reusado.
-func buildRoot(active *projects.ActiveState, repo *projects.Repo, al *audit.Logger) *cobra.Command {
-	root := &cobra.Command{Use: "mcp-proxy"}
-
-	projectCreate := &cobra.Command{
-		Use:   "create",
-		Short: "Cria um novo projeto",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			p := &projects.Project{
-				Name:     cmd.Flags().Lookup("name").Value.String(),
-				Type:     projects.ProjectType(cmd.Flags().Lookup("type").Value.String()),
-				Program:  cmd.Flags().Lookup("program").Value.String(),
-				Platform: cmd.Flags().Lookup("platform").Value.String(),
-			}
-			if err := repo.CreateProject(p); err != nil {
-				_ = al.Log(audit.Event{Tool: "project create", Action: "error", Detail: err.Error()})
-				return err
-			}
-			_ = al.Log(audit.Event{Tool: "project create", Action: "create", Detail: map[string]any{"name": p.Name}})
-			fmt.Fprintf(cmd.OutOrStdout(), "projeto criado: %s\n", p.Name)
-			return nil
-		},
-	}
-	projectCreate.Flags().String("name", "", "nome")
-	projectCreate.Flags().String("type", "", "tipo")
-	projectCreate.Flags().String("program", "", "programa")
-	projectCreate.Flags().String("platform", "", "plataforma")
-	_ = projectCreate.MarkFlagRequired("name")
-	_ = projectCreate.MarkFlagRequired("type")
-
-	projectUse := &cobra.Command{
-		Use:  "use NAME",
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := active.SetProject(args[0]); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "projeto ativo: %s\n", args[0])
-			return nil
-		},
-	}
-	projectCmd := &cobra.Command{Use: "project"}
-	projectCmd.AddCommand(projectCreate, projectUse)
-
-	targetAdd := &cobra.Command{
-		Use: "add",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			host := cmd.Flags().Lookup("host").Value.String()
-			if !cmd.Flags().Changed("confirm") {
-				return fmt.Errorf("voce deve passar --confirm para confirmar que tem autorizacao para testar %q", host)
-			}
-			proj, err := active.Project()
-			if err != nil || proj == nil {
-				return fmt.Errorf("nenhum projeto ativo; use 'mcp-proxy project use NAME' primeiro")
-			}
-			tgt := &projects.Target{Host: host}
-			if err := repo.AddTarget(proj.Name, tgt); err != nil {
-				_ = al.Log(audit.Event{Tool: "target add", Action: "error", Detail: err.Error()})
-				return err
-			}
-			// ponytail: replica do target.go de producao; buildRoot e test-only ate Task 19 extrair internal/cli
-			dbPath := filepath.Join(tgt.Dir(proj.Dir(repo.WorkspacePath())), "requests.db")
-			if _, err := store.OpenSQLite(dbPath); err != nil {
-				return fmt.Errorf("abrir store: %w", err)
-			}
-			_ = al.Log(audit.Event{Tool: "target add", Action: "add", Detail: map[string]any{"host": host, "project": proj.Name}})
-			fmt.Fprintf(cmd.OutOrStdout(), "alvo adicionado: %s/%s\n", proj.Name, host)
-			return nil
-		},
-	}
-	targetAdd.Flags().String("host", "", "host")
-	targetAdd.Flags().Bool("confirm", false, "confirma autorizacao")
-	_ = targetAdd.MarkFlagRequired("host")
-
-	targetUse := &cobra.Command{
-		Use:  "use HOST",
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := active.SetTarget(args[0]); err != nil {
-				return err
-			}
-			fmt.Fprintf(cmd.OutOrStdout(), "alvo ativo: %s\n", args[0])
-			return nil
-		},
-	}
-	targetCmd := &cobra.Command{Use: "target"}
-	targetCmd.AddCommand(targetAdd, targetUse)
-
-	root.AddCommand(projectCmd, targetCmd)
-	return root
 }
