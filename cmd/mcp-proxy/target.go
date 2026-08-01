@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/isaias/network-copitlot/internal/audit"
 	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaias/network-copitlot/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -49,6 +51,11 @@ func newTargetAddCmd(active *projects.ActiveState, repo *projects.Repo, al *audi
 			if err := repo.AddTarget(proj.Name, tgt); err != nil {
 				_ = al.Log(audit.Event{Tool: "target add", Action: "error", Detail: err.Error()})
 				return err
+			}
+			dbPath := filepath.Join(tgt.Dir(proj.Dir(repo.WorkspacePath())), "requests.db")
+			if _, err := store.OpenSQLite(dbPath); err != nil {
+				_ = al.Log(audit.Event{Tool: "target add", Action: "error", Detail: map[string]any{"err": err.Error()}})
+				return fmt.Errorf("abrir store: %w", err)
 			}
 			_ = al.Log(audit.Event{Tool: "target add", Action: "add", Detail: map[string]any{"host": host, "project": proj.Name}})
 			fmt.Fprintf(cmd.OutOrStdout(), "alvo adicionado: %s/%s\n", proj.Name, host)

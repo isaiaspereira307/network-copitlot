@@ -167,13 +167,11 @@ func buildRoot(active *projects.ActiveState, repo *projects.Repo, al *audit.Logg
 				_ = al.Log(audit.Event{Tool: "target add", Action: "error", Detail: err.Error()})
 				return err
 			}
-			// inicializa storage SQLite do alvo (cria requests.db vazio com schema)
-			dbPath := filepath.Join(repo.WorkspacePath(), proj.Name, "targets", host, "requests.db")
-			st, err := store.OpenSQLite(dbPath)
-			if err != nil {
-				return fmt.Errorf("abre store: %w", err)
+			// ponytail: replica do target.go de producao; buildRoot e test-only ate Task 19 extrair internal/cli
+			dbPath := filepath.Join(tgt.Dir(proj.Dir(repo.WorkspacePath())), "requests.db")
+			if _, err := store.OpenSQLite(dbPath); err != nil {
+				return fmt.Errorf("abrir store: %w", err)
 			}
-			_ = st.Close()
 			_ = al.Log(audit.Event{Tool: "target add", Action: "add", Detail: map[string]any{"host": host, "project": proj.Name}})
 			fmt.Fprintf(cmd.OutOrStdout(), "alvo adicionado: %s/%s\n", proj.Name, host)
 			return nil
