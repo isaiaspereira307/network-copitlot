@@ -8,6 +8,10 @@
 *.so
 *.dylib
 
+# mcp-proxy binary
+mcp-proxy
+mcp-proxy.exe
+
 # Test binary, built with `go test -c`
 *.test
 
