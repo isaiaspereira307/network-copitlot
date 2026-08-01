@@ -42,6 +42,9 @@ func (p *Project) Validate() error {
 	if !nameSafe.MatchString(p.Name) {
 		return fmt.Errorf("name invalido (caracteres proibidos): %q", p.Name)
 	}
+	if p.Name == "." || p.Name == ".." {
+		return fmt.Errorf("name invalido (path traversal): %q", p.Name)
+	}
 	if !p.Type.Valid() {
 		return fmt.Errorf("type invalido: %q (use bugbounty|pentest)", p.Type)
 	}
@@ -66,6 +69,9 @@ func (t *Target) Validate() error {
 	}
 	if !hostSafe.MatchString(t.Host) {
 		return fmt.Errorf("host invalido: %q", t.Host)
+	}
+	if t.Host == "." || t.Host == ".." {
+		return fmt.Errorf("host invalido (path traversal): %q", t.Host)
 	}
 	return nil
 }

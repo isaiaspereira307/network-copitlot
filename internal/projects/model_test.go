@@ -36,6 +36,8 @@ func TestProject_Validate(t *testing.T) {
 	}{
 		{"empty name", &Project{Name: "", Type: ProjectBugBounty, CreatedAt: now}},
 		{"bad name chars", &Project{Name: "../escape", Type: ProjectBugBounty, CreatedAt: now}},
+		{"dot name", &Project{Name: ".", Type: ProjectBugBounty, CreatedAt: now}},
+		{"dotdot name", &Project{Name: "..", Type: ProjectBugBounty, CreatedAt: now}},
 		{"bad type", &Project{Name: "X", Type: "x", CreatedAt: now}},
 	}
 	for _, b := range bad {
@@ -51,6 +53,9 @@ func TestProject_Dir(t *testing.T) {
 	want := "/ws/HackerOne-EMPRESA"
 	if got != want {
 		t.Errorf("Dir = %q, want %q", got, want)
+	}
+	if strings.Contains(got, "..") {
+		t.Error("Dir must not contain ..")
 	}
 }
 
@@ -68,6 +73,8 @@ func TestTarget_Validate(t *testing.T) {
 		{"empty host", &Target{Host: "", CreatedAt: now}},
 		{"path traversal", &Target{Host: "../etc", CreatedAt: now}},
 		{"slash in host", &Target{Host: "a/b", CreatedAt: now}},
+		{"dot host", &Target{Host: ".", CreatedAt: now}},
+		{"dotdot host", &Target{Host: "..", CreatedAt: now}},
 	}
 	for _, b := range bad {
 		if err := b.t.Validate(); err == nil {
