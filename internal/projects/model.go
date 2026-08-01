@@ -51,6 +51,7 @@ func (p *Project) Validate() error {
 	return nil
 }
 
+// Dir assumes the receiver has been validated; callers must call Validate() first.
 func (p *Project) Dir(workspace string) string {
 	return filepath.Join(workspace, p.Name)
 }
@@ -76,6 +77,7 @@ func (t *Target) Validate() error {
 	return nil
 }
 
+// Dir assumes the receiver has been validated; callers must call Validate() first.
 func (t *Target) Dir(projectDir string) string {
 	return filepath.Join(projectDir, "targets", t.Host)
 }
