@@ -114,7 +114,7 @@ func TestAddTargetTool_RequiresConfirmation(t *testing.T) {
 		t.Fatalf("set_active_project: %v", err)
 	}
 	// sem confirmed: true -> erro
-	_, err = toolRegistry["add_target"](context.Background(), map[string]any{"host": "x.com"})
+	_, err = s.tools["add_target"](context.Background(), map[string]any{"host": "x.com"})
 	if err == nil {
 		t.Fatal("expected error when confirmation missing")
 	}
@@ -152,8 +152,8 @@ func TestAddTargetTool_WithConfirmation(t *testing.T) {
 }
 
 func TestAddTargetTool_NoActiveProject(t *testing.T) {
-	_, _ = newTestServer(t)
-	_, err := toolRegistry["add_target"](context.Background(), map[string]any{"host": "x.com", "confirmed": true})
+	s, _ := newTestServer(t)
+	_, err := s.tools["add_target"](context.Background(), map[string]any{"host": "x.com", "confirmed": true})
 	if err == nil {
 		t.Fatal("expected error: no active project")
 	}
@@ -218,7 +218,7 @@ func TestSetActiveTargetTool(t *testing.T) {
 // o mesmo helper. Variante do brief (que so retornava out e fazia Fatalf).
 func callTool(t *testing.T, s *Server, name string, args map[string]any) (string, error) {
 	t.Helper()
-	fn, ok := toolRegistry[name]
+	fn, ok := s.tools[name]
 	if !ok {
 		t.Fatalf("tool %s not registered", name)
 	}

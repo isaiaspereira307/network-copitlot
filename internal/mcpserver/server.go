@@ -20,11 +20,12 @@ type Server struct {
 	mcp         *mcpsdk.MCPServer
 	currentStore store.Store
 	mu          sync.Mutex // guards currentStore
+	tools       map[string]toolFunc
 }
 
 func New(active *projects.ActiveState, repo *projects.Repo, a *audit.Logger) *Server {
 	m := mcpsdk.NewMCPServer("mcp-proxy", "v0.2.0")
-	s := &Server{active: active, repo: repo, audit: a, mcp: m}
+	s := &Server{active: active, repo: repo, audit: a, mcp: m, tools: map[string]toolFunc{}}
 	s.RegisterTools()
 	return s
 }

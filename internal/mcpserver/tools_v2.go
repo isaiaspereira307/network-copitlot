@@ -13,21 +13,17 @@ import (
 // toolFunc: assinatura comum de todas as tools v2.
 type toolFunc func(ctx context.Context, args map[string]any) (string, error)
 
-// toolRegistry: registry local usado pelos testes para invocar toolFunc sem
-// subir stdio. O wiring real no mcp-go Server (s.mcp.AddTool) acontece na Task 15.
-var toolRegistry = map[string]toolFunc{}
-
 func registerV2Tools(s *Server) {
 	// project tools (task 12)
-	toolRegistry["create_project"] = s.toolCreateProject
-	toolRegistry["list_projects"] = s.toolListProjects
-	toolRegistry["set_active_project"] = s.toolSetActiveProject
+	s.tools["create_project"] = s.toolCreateProject
+	s.tools["list_projects"] = s.toolListProjects
+	s.tools["set_active_project"] = s.toolSetActiveProject
 	// target tools (task 13)
-	toolRegistry["add_target"] = s.toolAddTarget
-	toolRegistry["list_targets"] = s.toolListTargets
-	toolRegistry["set_active_target"] = s.toolSetActiveTarget
+	s.tools["add_target"] = s.toolAddTarget
+	s.tools["list_targets"] = s.toolListTargets
+	s.tools["set_active_target"] = s.toolSetActiveTarget
 	// context (task 14)
-	toolRegistry["get_active_context"] = s.toolGetActiveContext
+	s.tools["get_active_context"] = s.toolGetActiveContext
 }
 
 func (s *Server) toolCreateProject(ctx context.Context, args map[string]any) (string, error) {
