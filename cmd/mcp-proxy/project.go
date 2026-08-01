@@ -15,7 +15,7 @@ func newProjectCmd(active *projects.ActiveState, repo *projects.Repo, al *audit.
 	}
 	cmd.AddCommand(
 		newProjectCreateCmd(active, repo, al),
-		newProjectListCmd(active, repo, al),
+		newProjectListCmd(repo, al),
 		newProjectUseCmd(active, repo, al),
 	)
 	return cmd
@@ -56,7 +56,7 @@ func newProjectCreateCmd(active *projects.ActiveState, repo *projects.Repo, al *
 	return c
 }
 
-func newProjectListCmd(active *projects.ActiveState, repo *projects.Repo, al *audit.Logger) *cobra.Command {
+func newProjectListCmd(repo *projects.Repo, al *audit.Logger) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "Lista projetos",
@@ -70,9 +70,7 @@ func newProjectListCmd(active *projects.ActiveState, repo *projects.Repo, al *au
 				return nil
 			}
 			for _, p := range list {
-				marker := "  "
-				_ = active
-				fmt.Fprintf(cmd.OutOrStdout(), "%s%s\t%s\n", marker, p.Name, p.Type)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", p.Name, p.Type)
 			}
 			return nil
 		},
