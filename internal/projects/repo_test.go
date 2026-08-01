@@ -1,8 +1,11 @@
 package projects
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -131,5 +134,35 @@ func TestRepo_ProjectDir_Correct(t *testing.T) {
 	want := filepath.Join(r.WorkspacePath(), "P", "meta.yaml")
 	if _, err := loadFile(want); err != nil {
 		t.Errorf("meta.yaml not at expected path: %v", err)
+	}
+}
+
+func TestRepo_LoadTarget_PreservesIOError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("chmod 0000 does not block owner access on windows")
+	}
+	r := newTestRepo(t)
+	if err := r.CreateProject(&Project{Name: "P", Type: ProjectBugBounty, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	tgt := &Target{Host: "api.empresa.com", CreatedAt: time.Now().UTC().Truncate(time.Second)}
+	if err := r.AddTarget("P", tgt); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	dir := filepath.Join(r.WorkspacePath(), "P", "targets", "api.empresa.com")
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+	_, err := r.LoadTarget("P", "api.empresa.com")
+	if err == nil {
+		t.Fatal("expected error from unreadable target dir, got nil")
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ErrNotExist must not mask IO error; got %v", err)
+	}
+	if strings.Contains(err.Error(), "nao encontrado") {
+		t.Fatalf("error must preserve underlying IO cause, not wrap as 'nao encontrado'; got %v", err)
 	}
 }

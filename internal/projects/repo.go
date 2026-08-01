@@ -56,7 +56,10 @@ func (r *Repo) CreateProject(p *Project) error {
 func (r *Repo) LoadProject(name string) (*Project, error) {
 	dir := r.projectDir(name)
 	if _, err := os.Stat(filepath.Join(dir, "meta.yaml")); err != nil {
-		return nil, fmt.Errorf("projeto nao encontrado: %s", name)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("projeto nao encontrado: %s", name)
+		}
+		return nil, err
 	}
 	var p Project
 	if err := readYAML(filepath.Join(dir, "meta.yaml"), &p); err != nil {
@@ -132,7 +135,10 @@ func (r *Repo) LoadTarget(projectName, host string) (*Target, error) {
 	dir := r.targetDir(projectName, host)
 	meta := filepath.Join(dir, "meta.yaml")
 	if _, err := os.Stat(meta); err != nil {
-		return nil, fmt.Errorf("alvo nao encontrado: %s/%s", projectName, host)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, fmt.Errorf("alvo nao encontrado: %s/%s", projectName, host)
+		}
+		return nil, err
 	}
 	var t Target
 	if err := readYAML(meta, &t); err != nil {
