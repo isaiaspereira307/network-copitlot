@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"path/filepath"
+	"sync"
 
 	"github.com/isaias/network-copitlot/internal/audit"
 	"github.com/isaias/network-copitlot/internal/projects"
@@ -18,6 +19,7 @@ type Server struct {
 	audit       *audit.Logger
 	mcp         *mcpsdk.MCPServer
 	currentStore store.Store
+	mu          sync.Mutex // guards currentStore
 }
 
 func New(active *projects.ActiveState, repo *projects.Repo, a *audit.Logger) *Server {
@@ -102,6 +104,8 @@ func (s *Server) wrapTool(name string, fn toolFunc) mcpsdk.ToolHandlerFunc {
 // openStoreForActiveTarget abre (ou recria) o store SQLite do alvo ativo.
 // Retorna nil se nao ha alvo ativo. Fecha o anterior se existir.
 func (s *Server) openStoreForActiveTarget() (store.Store, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.currentStore != nil {
 		_ = s.currentStore.Close()
 		s.currentStore = nil
