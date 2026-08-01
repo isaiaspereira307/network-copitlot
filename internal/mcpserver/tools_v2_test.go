@@ -263,8 +263,10 @@ func TestGetActiveContextTool_Full(t *testing.T) {
 	if ctx["active_target"] != "x.com" {
 		t.Errorf("target = %v", ctx["active_target"])
 	}
-	if _, ok := ctx["request_count"]; !ok {
-		t.Error("request_count missing")
+	if v, ok := ctx["request_count"].(float64); !ok {
+		t.Errorf("request_count missing or wrong type: %T", ctx["request_count"])
+	} else if v != 0 {
+		t.Errorf("request_count = %v, want 0", v)
 	}
 }
 
