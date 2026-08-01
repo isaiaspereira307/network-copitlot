@@ -47,5 +47,8 @@ notes: "importado da v1 (flat store)"
 		return fmt.Errorf("move db: %w", err)
 	}
 	// cria marker
-	return os.WriteFile(marker, []byte("migrated"), 0o600)
+	if err := os.WriteFile(marker, []byte("migrated"), 0o600); err != nil {
+		return fmt.Errorf("write marker: %w", err)
+	}
+	return nil
 }
