@@ -103,6 +103,117 @@ func TestSetActiveProject_NotFound(t *testing.T) {
 	}
 }
 
+func TestAddTargetTool_RequiresConfirmation(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	if err != nil {
+		t.Fatalf("create_project: %v", err)
+	}
+	_, err = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	if err != nil {
+		t.Fatalf("set_active_project: %v", err)
+	}
+	// sem confirmed: true -> erro
+	_, err = toolRegistry["add_target"](context.Background(), map[string]any{"host": "x.com"})
+	if err == nil {
+		t.Fatal("expected error when confirmation missing")
+	}
+}
+
+func TestAddTargetTool_WithConfirmation(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	if err != nil {
+		t.Fatalf("create_project: %v", err)
+	}
+	_, err = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	if err != nil {
+		t.Fatalf("set_active_project: %v", err)
+	}
+	out, err := callTool(t, s, "add_target", map[string]any{
+		"host":      "api.empresa.com",
+		"confirmed": true,
+	})
+	if err != nil {
+		t.Fatalf("add_target: %v", err)
+	}
+	if out == "" {
+		t.Fatal("empty")
+	}
+	// verifica persistencia
+	repo := projects.NewRepo(getWorkspace(t))
+	tgt, err := repo.LoadTarget("P", "api.empresa.com")
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	if tgt.Host != "api.empresa.com" {
+		t.Errorf("host = %q", tgt.Host)
+	}
+}
+
+func TestAddTargetTool_NoActiveProject(t *testing.T) {
+	_, _ = newTestServer(t)
+	_, err := toolRegistry["add_target"](context.Background(), map[string]any{"host": "x.com", "confirmed": true})
+	if err == nil {
+		t.Fatal("expected error: no active project")
+	}
+}
+
+func TestListTargetsTool(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	if err != nil {
+		t.Fatalf("create_project: %v", err)
+	}
+	_, err = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	if err != nil {
+		t.Fatalf("set_active_project: %v", err)
+	}
+	_, err = callTool(t, s, "add_target", map[string]any{"host": "a.com", "confirmed": true})
+	if err != nil {
+		t.Fatalf("add_target a: %v", err)
+	}
+	_, err = callTool(t, s, "add_target", map[string]any{"host": "b.com", "confirmed": true})
+	if err != nil {
+		t.Fatalf("add_target b: %v", err)
+	}
+	out, err := callTool(t, s, "list_targets", map[string]any{})
+	if err != nil {
+		t.Fatalf("list_targets: %v", err)
+	}
+	var list []map[string]any
+	if err := json.Unmarshal([]byte(out), &list); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	if len(list) != 2 {
+		t.Errorf("expected 2, got %d", len(list))
+	}
+}
+
+func TestSetActiveTargetTool(t *testing.T) {
+	s, active := newTestServer(t)
+	_, err := callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	if err != nil {
+		t.Fatalf("create_project: %v", err)
+	}
+	_, err = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	if err != nil {
+		t.Fatalf("set_active_project: %v", err)
+	}
+	_, err = callTool(t, s, "add_target", map[string]any{"host": "x.com", "confirmed": true})
+	if err != nil {
+		t.Fatalf("add_target: %v", err)
+	}
+	_, err = callTool(t, s, "set_active_target", map[string]any{"host": "x.com"})
+	if err != nil {
+		t.Fatalf("set_active_target: %v", err)
+	}
+	tgt, _ := active.Target()
+	if tgt == nil || tgt.Host != "x.com" {
+		t.Errorf("active target not set: %+v", tgt)
+	}
+}
+
 // callTool: retorna (out, err) para que testes de erro e sucesso compartilhem
 // o mesmo helper. Variante do brief (que so retornava out e fazia Fatalf).
 func callTool(t *testing.T, s *Server, name string, args map[string]any) (string, error) {
