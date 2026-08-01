@@ -231,4 +231,41 @@ func getWorkspace(t *testing.T) string {
 	return cfg.WorkspacePath
 }
 
+func TestGetActiveContextTool_Empty(t *testing.T) {
+	s, _ := newTestServer(t)
+	out, _ := callTool(t, s, "get_active_context", map[string]any{})
+	if out == "" {
+		t.Fatal("empty")
+	}
+	// sem projeto ativo: retorna JSON com active_project=""
+	var ctx map[string]any
+	_ = json.Unmarshal([]byte(out), &ctx)
+	if ctx["active_project"] != "" {
+		t.Errorf("expected empty, got %+v", ctx)
+	}
+}
+
+func TestGetActiveContextTool_Full(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "x.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "x.com"})
+	out, err := callTool(t, s, "get_active_context", map[string]any{})
+	if err != nil {
+		t.Fatalf("get_active_context: %v", err)
+	}
+	var ctx map[string]any
+	_ = json.Unmarshal([]byte(out), &ctx)
+	if ctx["active_project"] != "P" {
+		t.Errorf("project = %v", ctx["active_project"])
+	}
+	if ctx["active_target"] != "x.com" {
+		t.Errorf("target = %v", ctx["active_target"])
+	}
+	if _, ok := ctx["request_count"]; !ok {
+		t.Error("request_count missing")
+	}
+}
+
 var _ = time.Now

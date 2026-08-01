@@ -79,9 +79,28 @@ func (s *Server) toolSetActiveProject(ctx context.Context, args map[string]any) 
 	return fmt.Sprintf("projeto ativo: %s", name), nil
 }
 
-// stubs: toolGetActiveContext preenchido na task 14.
 func (s *Server) toolGetActiveContext(ctx context.Context, args map[string]any) (string, error) {
-	return "", fmt.Errorf("not implemented yet")
+	proj, _ := s.active.Project()
+	tgt, _ := s.active.Target()
+	out := map[string]any{
+		"active_project": "",
+		"active_target":  "",
+		"request_count":  0,
+	}
+	if proj != nil {
+		out["active_project"] = proj.Name
+		out["project_type"] = string(proj.Type)
+	}
+	if tgt != nil {
+		out["active_target"] = tgt.Host
+		st, err := s.openStoreForActiveTarget()
+		if err == nil && st != nil {
+			n, _ := st.Count()
+			out["request_count"] = n
+		}
+	}
+	b, _ := json.Marshal(out)
+	return string(b), nil
 }
 
 // toolAddTarget: requer confirmed=true do cliente MCP (PRD §5). Server NAO
