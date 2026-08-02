@@ -5,9 +5,51 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 )
+
+// sensitiveKeyRe casa chaves que provavelmente carregam segredo.
+// Case-insensitive. Casa: password, passwd, passphrase, privatekey,
+// apikey, api_key, secret, token, credential, authorization.
+var sensitiveKeyRe = regexp.MustCompile(`(?i)(password|passphrase|privatekey|api_?key|secret|token|credential|authorization)`)
+
+const redactedSentinel = "[redacted]"
+
+// redact percorre o valor e substitui strings em chaves sensiveis por
+// redactedSentinel. Nao-string (bool, numero) e preservado: redacao so
+// se aplica a texto (credenciais). Mapas e slices sao percorridos
+// recursivamente; valores primitivos fora de chave sensivel ficam intactos.
+//
+// Inspirado em pentest-copilot/backend/src/services/mcp-tools.service.ts
+// (funcao redactMcpArgs). Reescrito do zero em Go.
+func redact(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(x))
+		for k, val := range x {
+			if _, isStr := val.(string); isStr && sensitiveKeyRe.MatchString(k) {
+				if val == "" {
+					out[k] = val
+				} else {
+					out[k] = redactedSentinel
+				}
+				continue
+			}
+			out[k] = redact(val)
+		}
+		return out
+	case []any:
+		out := make([]any, len(x))
+		for i, val := range x {
+			out[i] = redact(val)
+		}
+		return out
+	default:
+		return v
+	}
+}
 
 const (
 	dirName  = ".mcp-proxy"
@@ -49,6 +91,9 @@ func New(path string) (*Logger, error) {
 func (l *Logger) Log(e Event) error {
 	if e.Ts.IsZero() {
 		e.Ts = time.Now().UTC()
+	}
+	if e.Detail != nil {
+		e.Detail = redact(e.Detail)
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()

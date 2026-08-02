@@ -4,13 +4,18 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
 
 	"github.com/isaias/network-copitlot/internal/audit"
 	"github.com/isaias/network-copitlot/internal/cli"
 	"github.com/isaias/network-copitlot/internal/config"
 	"github.com/isaias/network-copitlot/internal/mcpserver"
 	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaias/network-copitlot/internal/proxy"
 	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/spf13/cobra"
 )
 
 func main() {
@@ -40,15 +45,82 @@ func run() error {
 	}
 	defer al.Close()
 
+	root := cli.NewRootCmd(active, repo, al)
+	root.AddCommand(newProxyCmd(active, repo, al))
+
 	if len(os.Args) < 2 {
 		return runMCPServer(active, repo, al)
 	}
-	cmd := cli.NewRootCmd(active, repo, al)
-	return cmd.Execute()
+	return root.Execute()
 }
 
 func runMCPServer(active *projects.ActiveState, repo *projects.Repo, al *audit.Logger) error {
 	s := mcpserver.New(active, repo, al)
 	s.RegisterTools()
 	return s.Run(context.Background())
+}
+
+// newProxyCmd: `mcp-proxy proxy [--addr :8080]` sobe o MITM standalone.
+// Requer projeto + alvo ativo; grava em
+// <workspace>/<projeto>/targets/<host>/requests.db.
+func newProxyCmd(active *projects.ActiveState, repo *projects.Repo, al *audit.Logger) *cobra.Command {
+	var addr string
+	c := &cobra.Command{
+		Use:   "proxy",
+		Short: "Sobe o proxy MITM HTTP/HTTPS standalone (default :8080)",
+		Long: `Sobe o proxy MITM HTTP/HTTPS no endereco --addr. Requer projeto+alvo
+ativo. Conexoes in-scope sao gravadas com body; out-of-scope sao gravadas
+sem body (apenas metadados, conforme PRD §4.1). O CA esta em
+~/.mcp-proxy/ca/cert.pem — instale no browser/emulador para MITM HTTPS.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			proj, err := active.Project()
+			if err != nil || proj == nil {
+				return fmt.Errorf("nenhum projeto ativo; use 'mcp-proxy project use NAME' primeiro")
+			}
+			tgt, err := active.Target()
+			if err != nil || tgt == nil {
+				return fmt.Errorf("nenhum alvo ativo; use 'mcp-proxy target use HOST' primeiro")
+			}
+			dbPath := filepath.Join(tgt.Dir(proj.Dir(repo.WorkspacePath())), "requests.db")
+			st, err := store.OpenSQLite(dbPath)
+			if err != nil {
+				return fmt.Errorf("abrir store: %w", err)
+			}
+			defer st.Close()
+			caDir, _ := defaultCADir()
+			p := proxy.New(st, caDir)
+			p.SetTarget(tgt)
+			if err := p.Start(addr); err != nil {
+				return err
+			}
+			_ = al.Log(audit.Event{
+				Tool:   "proxy",
+				Action: "start",
+				Detail: map[string]any{"addr": p.Addr(), "host": tgt.Host},
+			})
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"proxy escutando em %s (alvo: %s/%s)\n", p.Addr(), proj.Name, tgt.Host)
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"CA: %s/cert.pem — instale no browser/emulador para MITM HTTPS\n", caDir)
+			fmt.Fprintln(cmd.OutOrStdout(), "Ctrl+C para parar")
+
+			sig := make(chan os.Signal, 1)
+			signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+			<-sig
+			p.Stop()
+			_ = al.Log(audit.Event{Tool: "proxy", Action: "stop"})
+			return nil
+		},
+	}
+	c.Flags().StringVar(&addr, "addr", ":8080", "endereco de escuta do proxy")
+	return c
+}
+
+// defaultCADir retorna ~/.mcp-proxy/ca.
+func defaultCADir() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".mcp-proxy", "ca"), nil
 }
