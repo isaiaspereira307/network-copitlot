@@ -83,7 +83,7 @@ func TestProxy_HTTPS_RecordsFullTransaction(t *testing.T) {
 	proxyURL, _ := url.Parse("http://" + addr)
 	dialViaProxy(t, proxyURL, up)
 
-	all, err := p.store.List(store.ListFilter{})
+	all, err := p.store.All()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestProxy_OutOfScope_OmitsBodies(t *testing.T) {
 	proxyURL, _ := url.Parse("http://" + addr)
 	dialViaProxy(t, proxyURL, up)
 
-	all, err := p.store.List(store.ListFilter{})
+	all, err := p.store.All()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestProxy_NoTarget_LogsMetadataWithoutBody(t *testing.T) {
 	proxyURL, _ := url.Parse("http://" + addr)
 	dialViaProxy(t, proxyURL, up)
 
-	all, _ := p.store.List(store.ListFilter{})
+	all, _ := p.store.All()
 	if len(all) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(all))
 	}
@@ -176,7 +176,7 @@ func TestProxy_OutOfScopeOverrides(t *testing.T) {
 	// ver que o escopo da a resposta certa. 127.0.0.1 nao casa *.test
 	// e tambem nao casa out-of-scope. Resultado: recusado (sem body).
 	dialViaProxy(t, proxyURL, up)
-	all, _ := p.store.List(store.ListFilter{})
+	all, _ := p.store.All()
 	if len(all) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(all))
 	}

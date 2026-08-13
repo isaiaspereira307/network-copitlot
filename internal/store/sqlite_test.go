@@ -56,6 +56,11 @@ func TestSQLiteStore_List_Limit(t *testing.T) {
 	if len(got) != 3 {
 		t.Errorf("expected 3, got %d", len(got))
 	}
+	for _, sm := range got {
+		if sm.Method != "GET" || sm.URL == "" {
+			t.Errorf("summary fields missing: %+v", sm)
+		}
+	}
 }
 
 func TestSQLiteStore_Count(t *testing.T) {

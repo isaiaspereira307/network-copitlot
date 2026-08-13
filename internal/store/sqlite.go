@@ -81,12 +81,31 @@ func (s *SQLiteStore) Get(id int64) (*Request, error) {
 	return scanRequest(row)
 }
 
-func (s *SQLiteStore) List(f ListFilter) ([]*Request, error) {
-	q := `SELECT id, ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, ttfb_ms, tags, notes FROM requests ORDER BY id DESC`
+func (s *SQLiteStore) List(f ListFilter) ([]*RequestSummary, error) {
+	q := `SELECT id, ts, method, url, status, resp_len FROM requests ORDER BY id DESC`
 	if f.Limit > 0 {
 		q += fmt.Sprintf(" LIMIT %d", f.Limit)
 	}
 	rows, err := s.db.Query(q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*RequestSummary
+	for rows.Next() {
+		var sm RequestSummary
+		if err := rows.Scan(&sm.ID, &sm.Ts, &sm.Method, &sm.URL, &sm.Status, &sm.RespLen); err != nil {
+			return nil, err
+		}
+		out = append(out, &sm)
+	}
+	return out, rows.Err()
+}
+
+// All faz stream de todos os requests com corpos (req+resp). Filtros de List
+// nao se aplicam aqui; usado pelo scanner/export.
+func (s *SQLiteStore) All() ([]*Request, error) {
+	rows, err := s.db.Query(`SELECT id, ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, ttfb_ms, tags, notes FROM requests ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -100,6 +119,26 @@ func (s *SQLiteStore) List(f ListFilter) ([]*Request, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *SQLiteStore) GetDetail(id int64, include string, maxBody int, bodyRange string) (*RequestDetail, error) {
+	return nil, nil // TODO Task 3
+}
+
+func (s *SQLiteStore) SearchBodies(pattern string, scope string, limit int) ([]*BodyMatch, error) {
+	return nil, nil // TODO Task 4
+}
+
+func (s *SQLiteStore) Replay(id int64, overrides ReplayOverrides, scopeMatch func(string) bool) (*ReplayResult, error) {
+	return nil, nil // TODO Task 5
+}
+
+func (s *SQLiteStore) ListEndpoints() ([]*Endpoint, error) {
+	return nil, nil // TODO Task 14
+}
+
+func (s *SQLiteStore) DiffRequests(a, b int64, mode string) (*Diff, error) {
+	return nil, nil // TODO Task 15
 }
 
 func (s *SQLiteStore) Count() (int, error) {
