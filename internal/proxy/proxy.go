@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -37,12 +38,20 @@ type Proxy struct {
 	addr   string
 	logger *log.Logger
 
-	mu               sync.Mutex
-	target           *projects.Target
-	scope            *Scope
-	server           *http.Server
-	ln               net.Listener
-	strictUpstream   bool // false = InsecureSkipVerify no upstream (default pentest)
+	mu     sync.Mutex
+	target *projects.Target
+	scope  *Scope
+	// recarga viva (task 12.3): MCP server e proxy sao processos separados,
+	// sem IPC. O proxy observa o meta.yaml do alvo: stat barato a cada request;
+	// quando mtime (ou tamanho) muda, reloadTarget rele o Target do disco via
+	// projects.Repo e o escopo e refeito. Caminho quente = so o stat.
+	metaPath       string
+	metaMtime      time.Time
+	metaSize       int64
+	reloadTarget   func() (*projects.Target, error)
+	server         *http.Server
+	ln             net.Listener
+	strictUpstream bool // false = InsecureSkipVerify no upstream (default pentest)
 }
 
 // NewProxy cria um Proxy. caDir e onde EnsureCA persiste/le o CA.
@@ -58,6 +67,53 @@ func (p *Proxy) SetTarget(t *projects.Target) {
 	defer p.mu.Unlock()
 	p.target = t
 	p.scope = New(t)
+	// sem fonte de recarga: meta.yaml deixa de ser observado.
+	p.metaPath = ""
+	p.reloadTarget = nil
+}
+
+// SetTargetReload define o target ativo e observa metaPath (o meta.yaml do
+// alvo): a cada request, faz um stat barato; se mtime ou tamanho mudaram,
+// chama reloadTarget (ex: projects.Repo.LoadTarget) para reler o Target do
+// disco e refaz o escopo. Sem IPC — o proxy capta mudancas persistidas por
+// outros processos (o MCP server). Seguro para chamar de qualquer goroutine.
+func (p *Proxy) SetTargetReload(t *projects.Target, metaPath string, reloadTarget func() (*projects.Target, error)) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.target = t
+	p.scope = New(t)
+	p.metaPath = metaPath
+	p.reloadTarget = reloadTarget
+	if fi, err := os.Stat(metaPath); err == nil {
+		p.metaMtime = fi.ModTime()
+		p.metaSize = fi.Size()
+	}
+}
+
+// refreshScopeLocked: stat barato do meta.yaml; rele do disco (reloadTarget)
+// apenas quando mtime OU tamanho mudaram. Caminho quente: um os.Stat, nenhum
+// parse de disco. Chamada sob p.mu no inicio de cada request.
+func (p *Proxy) refreshScopeLocked() {
+	if p.reloadTarget == nil || p.metaPath == "" {
+		return
+	}
+	fi, err := os.Stat(p.metaPath)
+	if err != nil {
+		// arquivo ausente no stat: mantem o scope atual (nao derruba request).
+		return
+	}
+	if fi.ModTime().Equal(p.metaMtime) && fi.Size() == p.metaSize {
+		return
+	}
+	tgt, err := p.reloadTarget()
+	if err != nil {
+		p.logger.Printf("proxy.reload: %v", err)
+		return
+	}
+	p.target = tgt
+	p.scope = New(tgt)
+	p.metaMtime = fi.ModTime()
+	p.metaSize = fi.Size()
 }
 
 // Target retorna o target ativo (ou nil). Util para diagnosticos.
@@ -169,6 +225,7 @@ type captured struct {
 
 func (p *Proxy) onRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	p.mu.Lock()
+	p.refreshScopeLocked()
 	scp := p.scope
 	p.mu.Unlock()
 

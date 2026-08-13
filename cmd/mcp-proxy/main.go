@@ -89,7 +89,12 @@ sem body (apenas metadados, conforme PRD §4.1). O CA esta em
 			defer st.Close()
 			caDir, _ := defaultCADir()
 			p := proxy.NewProxy(st, caDir)
-			p.SetTarget(tgt)
+			// recarga viva: MCP server (processo separado) persiste o scope no
+			// meta.yaml; o proxy observa o mtime e rele do disco a cada request.
+			metaPath := filepath.Join(tgt.Dir(proj.Dir(repo.WorkspacePath())), "meta.yaml")
+			p.SetTargetReload(tgt, metaPath, func() (*projects.Target, error) {
+				return repo.LoadTarget(proj.Name, tgt.Host)
+			})
 			if err := p.Start(addr); err != nil {
 				return err
 			}

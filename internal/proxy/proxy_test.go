@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/isaias/network-copitlot/internal/projects"
 	"github.com/isaias/network-copitlot/internal/store"
+	"gopkg.in/yaml.v3"
 )
 
 // upstream retorna um httptest.NewTLSServer que responde OK com body conhecido.
@@ -183,6 +185,89 @@ func TestProxy_OutOfScopeOverrides(t *testing.T) {
 	got := all[0]
 	if len(got.ReqBody) != 0 || len(got.RespBody) != 0 {
 		t.Error("127.0.0.1 not in *.test scope; bodies should be omitted")
+	}
+}
+
+// TestProxy_ReloadsScopeFromMetaYAML (12.3): MCP server e proxy sao processos
+// separados — o proxy so repara no novo scope via stat do meta.yaml a cada
+// request. Escopo A restringe (request 1 sem body); novo meta.yaml (escopo B)
+// libera o upstream; request 2 ja captura com body. Sem restart do proxy.
+func TestProxy_ReloadsScopeFromMetaYAML(t *testing.T) {
+	up := upstream(t)
+	defer up.Close()
+
+	dir := t.TempDir()
+	projDir := filepath.Join(dir, "P")
+	tgtDir := filepath.Join(projDir, "targets", "x.test")
+	if err := os.MkdirAll(tgtDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta := filepath.Join(tgtDir, "meta.yaml")
+	writeMeta := func(inScope []string) {
+		data, err := yaml.Marshal(&projects.Target{Host: "x.test", InScopePatterns: inScope})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(meta, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// bump mtime explicito: granularidade de mtime de filesystem pode
+		// coincidir entre writes; forcar mtime futuro torna o teste deterministico.
+		future := time.Now().Add(5 * time.Second)
+		if err := os.Chtimes(meta, future, future); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// escopo A: restringe; 127.0.0.1 (upstream httptest) fica FORA -> sem body.
+	writeMeta([]string{"*.in-scope.test"})
+
+	repo := projects.NewRepo(dir)
+	tgt, err := repo.LoadTarget("P", "x.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	caDir := filepath.Join(t.TempDir(), "ca")
+	if _, _, err := EnsureCA(caDir); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.OpenSQLite(filepath.Join(t.TempDir(), "requests.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	p := NewProxy(st, caDir)
+	p.SetTargetReload(tgt, meta, func() (*projects.Target, error) {
+		return repo.LoadTarget("P", "x.test")
+	})
+	if err := p.Start("127.0.0.1:0"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { p.Stop() })
+	proxyURL, _ := url.Parse("http://" + p.Addr())
+
+	dialViaProxy(t, proxyURL, up) // request 1: escopo A -> out-of-scope
+
+	// escopo B: libera o loopback do upstream -> in-scope (com body).
+	writeMeta([]string{"127.0.0.1"})
+	dialViaProxy(t, proxyURL, up) // request 2: recarga viva via mtime-check
+
+	all, err := st.All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(all))
+	}
+	// All() ordena id DESC: all[1] = request 1, all[0] = request 2.
+	first, second := all[1], all[0]
+	if len(first.ReqBody) != 0 || len(first.RespBody) != 0 || first.Status != 0 {
+		t.Errorf("request 1 (escopo A) deveria ser out-of-scope: status=%d req=%d resp=%d bytes",
+			first.Status, len(first.ReqBody), len(first.RespBody))
+	}
+	if second.Status != http.StatusOK || string(second.RespBody) != `{"hello":"world"}` {
+		t.Errorf("request 2 (escopo B) deveria ser in-scope: status=%d resp=%q",
+			second.Status, second.RespBody)
 	}
 }
 
