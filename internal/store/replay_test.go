@@ -188,6 +188,48 @@ func TestReplay_FollowRedirects(t *testing.T) {
 	}
 }
 
+// TestReplay_RedirectOutOfScopeAborts: redirect (3xx) para host fora de escopo
+// aborta a cadeia; erro ErrOutOfScope e nada persistido.
+func TestReplay_RedirectOutOfScopeAborts(t *testing.T) {
+	s := newTestStore(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://evil.example.com/steal", http.StatusFound)
+	}))
+	defer upstream.Close()
+
+	upURL, _ := url.Parse(upstream.URL)
+	scopeMatch := func(host string) bool { return host == upURL.Hostname() }
+
+	origID, err := s.Insert(&Request{Ts: 1, Method: "GET", URL: upstream.URL, ReqHeaders: map[string][]string{}})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	_, err = s.Replay(origID, ReplayOverrides{FollowRedirects: true}, scopeMatch)
+	if err == nil || !errors.Is(err, ErrOutOfScope) {
+		t.Fatalf("err = %v, want ErrOutOfScope no redirect fora de escopo", err)
+	}
+	if n, _ := s.Count(); n != 1 {
+		t.Errorf("count = %d, want 1 (replay abortado nao persistido)", n)
+	}
+}
+
+// TestReplay_NilScopeMatchFailsClosed: scopeMatch nil recusa executar.
+func TestReplay_NilScopeMatchFailsClosed(t *testing.T) {
+	s := newTestStore(t)
+	origID, err := s.Insert(&Request{Ts: 1, Method: "GET", URL: "https://x.com/", ReqHeaders: map[string][]string{}})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	_, err = s.Replay(origID, ReplayOverrides{}, nil)
+	if err == nil {
+		t.Fatal("nil scopeMatch deve falhar fechado, nao enviar")
+	}
+	if n, _ := s.Count(); n != 1 {
+		t.Errorf("count = %d, want 1 (nada persistido)", n)
+	}
+}
+
 // TestReplay_MissingID: id inexistente -> erro, sem pouso no scope guard.
 func TestReplay_MissingID(t *testing.T) {
 	s := newTestStore(t)

@@ -23,6 +23,10 @@ func (s *SQLiteStore) Replay(id int64, overrides ReplayOverrides, scopeMatch fun
 	if err != nil {
 		return nil, fmt.Errorf("replay: request %d not found: %w", id, err)
 	}
+	// Fail-closed: scopeMatch e obrigatorio em caminho security-critical.
+	if scopeMatch == nil {
+		return nil, errors.New("replay: scopeMatch é nil — recusando executar")
+	}
 
 	method := overrides.MethodOverride
 	if method == "" {
@@ -43,7 +47,7 @@ func (s *SQLiteStore) Replay(id int64, overrides ReplayOverrides, scopeMatch fun
 
 	// Scope guard aplica-se ao host FINAL (pos-urlOverride). Tambem valido sem
 	// urlOverride: defense-in-depth sobre a URL original.
-	if scopeMatch != nil && !scopeMatch(u.Hostname()) {
+	if !scopeMatch(u.Hostname()) {
 		return nil, ErrOutOfScope
 	}
 
@@ -76,6 +80,15 @@ func (s *SQLiteStore) Replay(id int64, overrides ReplayOverrides, scopeMatch fun
 	if !overrides.FollowRedirects {
 		client.CheckRedirect = func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
+		}
+	} else {
+		// Re-guard: cada redirecionamento tambem passa pelo scope guard, para
+		// nao seguir para host fora de escopo (gap de seguranca criticado).
+		client.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+			if !scopeMatch(req.URL.Hostname()) {
+				return fmt.Errorf("redirect para host fora de escopo: %w", ErrOutOfScope)
+			}
+			return nil
 		}
 	}
 
