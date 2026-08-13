@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -220,5 +221,98 @@ func TestSQLiteStore_Count(t *testing.T) {
 	}
 	if n != 7 {
 		t.Errorf("count = %d, want 7", n)
+	}
+}
+
+func TestSearchBodies_SubstringAndRegex(t *testing.T) {
+	s := newTestStore(t)
+	rows := []*Request{
+		{Ts: 1, Method: "POST", URL: "https://api.empresa.com/auth", ReqHeaders: map[string][]string{}, ReqBody: []byte("Authorization: Bearer X"), Status: 200, RespHeaders: map[string][]string{}, RespBody: []byte("ok")},
+		{Ts: 2, Method: "GET", URL: "https://api.empresa.com/users", ReqHeaders: map[string][]string{}, ReqBody: []byte("SELECT * FROM users"), Status: 200, RespHeaders: map[string][]string{}, RespBody: []byte("[]")},
+		{Ts: 3, Method: "GET", URL: "https://api.empresa.com/search", ReqHeaders: map[string][]string{}, ReqBody: []byte("q=reflected"), Status: 200, RespHeaders: map[string][]string{}, RespBody: []byte("<title>q=reflected</title>")},
+		{Ts: 4, Method: "GET", URL: "https://api.empresa.com/needle", ReqHeaders: map[string][]string{}, ReqBody: []byte(strings.Repeat("a", 100) + "NEEDLE" + strings.Repeat("b", 100)), Status: 200, RespHeaders: map[string][]string{}, RespBody: []byte("page has reflected")},
+	}
+	for _, r := range rows {
+		if _, err := s.Insert(r); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+
+	// Substring (case-sensitive): "Bearer" so no req body da linha 0.
+	got, err := s.SearchBodies("Bearer", "both", 0)
+	if err != nil {
+		t.Fatalf("search substring: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("substring: got %d, want 1", len(got))
+	}
+	if got[0].URL != rows[0].URL {
+		t.Errorf("substring matched wrong row: %+v", got[0])
+	}
+	if !strings.Contains(got[0].MatchSnippet, "Bearer") {
+		t.Errorf("snippet missing match: %q", got[0].MatchSnippet)
+	}
+
+	// Regex: compila e casa "SELECT *" com espaco(s) opcional(is).
+	got, err = s.SearchBodies(`SELECT\s+\*`, "both", 0)
+	if err != nil {
+		t.Fatalf("search regex: %v", err)
+	}
+	if len(got) != 1 || got[0].URL != rows[1].URL {
+		t.Errorf("regex: got %+v, want 1 hit na linha 1", got)
+	}
+
+	// Scope req/resp: "q=reflected" esta no req e resp da linha 2.
+	for _, sc := range []string{"req", "resp"} {
+		got, err = s.SearchBodies("q=reflected", sc, 0)
+		if err != nil {
+			t.Fatalf("search %s: %v", sc, err)
+		}
+		if len(got) != 1 || got[0].URL != rows[2].URL {
+			t.Errorf("scope %s: got %+v, want 1 hit na linha 2", sc, got)
+		}
+	}
+	// "ok" esta so no resp body da linha 0.
+	if got, err = s.SearchBodies("ok", "req", 0); err != nil || len(got) != 0 {
+		t.Errorf("scope req: got %d (%v), want 0", len(got), err)
+	}
+	if got, err = s.SearchBodies("ok", "resp", 0); err != nil || len(got) != 1 {
+		t.Errorf("scope resp: got %d (%v), want 1", len(got), err)
+	}
+
+	// Janela do snippet: match no meio de body 206 chars -> janela <= 161 e contem o match.
+	got, err = s.SearchBodies("NEEDLE", "req", 0)
+	if err != nil {
+		t.Fatalf("search snippet: %v", err)
+	}
+	if len(got) != 1 || !strings.Contains(got[0].MatchSnippet, "NEEDLE") {
+		t.Errorf("snippet: got %+v, want 1 hit com NEEDLE", got)
+	}
+	if n := len(got[0].MatchSnippet); n > 161 {
+		t.Errorf("snippet len = %d, want <= 161", n)
+	}
+
+	// Ordem id DESC + limit aplicado apos o scan.
+	got, err = s.SearchBodies("reflected", "resp", 0)
+	if err != nil {
+		t.Fatalf("search reflected: %v", err)
+	}
+	if len(got) != 2 || got[0].URL != rows[3].URL || got[1].URL != rows[2].URL {
+		t.Errorf("order: got %+v, want [linha3, linha2]", got)
+	}
+	got, err = s.SearchBodies("reflected", "resp", 1)
+	if err != nil {
+		t.Fatalf("search limit: %v", err)
+	}
+	if len(got) != 1 || got[0].URL != rows[3].URL {
+		t.Errorf("limit: got %+v, want 1 hit na linha 3", got)
+	}
+
+	// Pattern vazio e scope invalido -> erro.
+	if _, err := s.SearchBodies("", "both", 0); err == nil {
+		t.Error("empty pattern: expected error")
+	}
+	if _, err := s.SearchBodies("x", "header", 0); err == nil {
+		t.Error("invalid scope: expected error")
 	}
 }

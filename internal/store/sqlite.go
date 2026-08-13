@@ -1,11 +1,14 @@
 package store
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -217,8 +220,117 @@ func cutBody(body []byte, maxBody int, rng string) (out []byte, total int, trunc
 	return
 }
 
+// searchScanLimit cap internal de linhas varridas; limit do chamador e o teto de
+// retorno. ponytail: limite fixo de 500, usar paginacao SQL se datasets crescerem.
+const searchScanLimit = 500
+
+// snippetWindow e o raio (em chars) do trecho ao redor do primeiro match.
+const snippetWindow = 80
+
+// matcher casa `pattern` em um body: se compila como regex, usa regex; senao
+// cai para substring case-sensitive via bytes.Contains/Index.
+type matcher struct {
+	re  *regexp.Regexp // nil = modo substring
+	str string
+}
+
+func newMatcher(pattern string) *matcher {
+	m := &matcher{str: pattern}
+	if re, err := regexp.Compile(pattern); err == nil {
+		m.re = re
+	}
+	return m
+}
+
+// find devolve o indice do primeiro match em body, ou -1.
+func (m *matcher) find(body []byte) int {
+	if m.re != nil {
+		if loc := m.re.FindIndex(body); loc != nil {
+			return loc[0]
+		}
+		return -1
+	}
+	return bytes.Index(body, []byte(m.str))
+}
+
+// makeSnippet extrai body[max(0,idx-window):min(len,idx+window)].
+func makeSnippet(body []byte, idx int) string {
+	lo := idx - snippetWindow
+	if lo < 0 {
+		lo = 0
+	}
+	hi := idx + snippetWindow
+	if hi > len(body) {
+		hi = len(body)
+	}
+	return string(body[lo:hi])
+}
+
+// SearchBodies procura `pattern` em req_body/resp_body conforme `scope`
+// ("req"|"resp"|"both", default "both"). Pattern que compila como regex vira
+// regex; senao e substring case-sensitive. Retorna um BodyMatch por request em
+// ordem id DESC (consistente com List), um snippet +/-80 chars por hit, e
+// respeita `limit` (default 30) como teto de retorno.
 func (s *SQLiteStore) SearchBodies(pattern string, scope string, limit int) ([]*BodyMatch, error) {
-	return nil, nil // TODO Task 4
+	if pattern == "" {
+		return nil, errors.New("SearchBodies: pattern vazio")
+	}
+	if scope == "" {
+		scope = "both"
+	}
+	switch scope {
+	case "req", "resp", "both":
+	default:
+		return nil, fmt.Errorf("SearchBodies: scope invalido %q", scope)
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	m := newMatcher(pattern)
+
+	rows, err := s.db.Query(`SELECT id, url, req_body, resp_body FROM requests ORDER BY id DESC LIMIT ?`, searchScanLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*BodyMatch
+	for rows.Next() {
+		var (
+			id       int64
+			url      string
+			reqBody  []byte
+			respBody []byte
+		)
+		if err := rows.Scan(&id, &url, &reqBody, &respBody); err != nil {
+			return nil, err
+		}
+		var (
+			body []byte
+			idx  = -1
+		)
+		switch scope {
+		case "req":
+			idx = m.find(reqBody)
+			body = reqBody
+		case "resp":
+			idx = m.find(respBody)
+			body = respBody
+		default: // both: req tem prioridade no snippet
+			idx = m.find(reqBody)
+			body = reqBody
+			if idx < 0 {
+				idx = m.find(respBody)
+				body = respBody
+			}
+		}
+		if idx >= 0 {
+			out = append(out, &BodyMatch{ID: id, URL: url, MatchSnippet: makeSnippet(body, idx)})
+			if len(out) >= limit {
+				break
+			}
+		}
+	}
+	return out, rows.Err()
 }
 
 func (s *SQLiteStore) Replay(id int64, overrides ReplayOverrides, scopeMatch func(string) bool) (*ReplayResult, error) {
