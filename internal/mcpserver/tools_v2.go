@@ -141,6 +141,9 @@ func (s *Server) toolListRequests(ctx context.Context, args map[string]any) (str
 	if v, ok := argInt("offset"); ok {
 		f.Offset = int(v)
 	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
 	if v, ok := argInt("status_filter"); ok {
 		f.StatusFilter = int(v)
 	}
