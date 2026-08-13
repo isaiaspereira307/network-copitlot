@@ -101,6 +101,16 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("list_requests", s.toolListRequests),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("get_request_detail",
+			mcp.WithDescription("Get full detail of one captured request (id from list_requests). include: headers (default, cheapest), body, or all. Bodies are truncated to max_body_bytes (default 8192) — check body_truncated/total_len; use body_range (e.g. '0-4096') to page through large bodies. Never request full bodies of large assets; use search_bodies or summarize first."),
+			mcp.WithNumber("id", mcp.Required()),
+			mcp.WithString("include", mcp.Enum("headers", "body", "all")),
+			mcp.WithNumber("max_body_bytes"),
+			mcp.WithString("body_range"),
+		),
+		s.wrapTool("get_request_detail", s.toolGetRequestDetail),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.

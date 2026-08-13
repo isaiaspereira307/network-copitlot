@@ -2,9 +2,11 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
+	"unicode/utf8"
 
 	"github.com/isaias/network-copitlot/internal/audit"
 	"github.com/isaias/network-copitlot/internal/projects"
@@ -13,6 +15,24 @@ import (
 
 // toolFunc: assinatura comum de todas as tools v2.
 type toolFunc func(ctx context.Context, args map[string]any) (string, error)
+
+// argInt extrai inteiro de args (MCP deserializa numeros como float64).
+func argInt(args map[string]any, k string) (int64, bool) {
+	switch v := args[k].(type) {
+	case float64:
+		return int64(v), true
+	case int:
+		return int64(v), true
+	case int64:
+		return v, true
+	}
+	return 0, false
+}
+
+func argStr(args map[string]any, k string) string {
+	v, _ := args[k].(string)
+	return v
+}
 
 func registerV2Tools(s *Server) {
 	// project tools (task 12)
@@ -27,6 +47,8 @@ func registerV2Tools(s *Server) {
 	s.tools["get_active_context"] = s.toolGetActiveContext
 	// registrar (task 8)
 	s.tools["list_requests"] = s.toolListRequests
+	// registrar (task 9)
+	s.tools["get_request_detail"] = s.toolGetRequestDetail
 }
 
 func (s *Server) toolCreateProject(ctx context.Context, args map[string]any) (string, error) {
@@ -113,23 +135,8 @@ func (s *Server) toolListRequests(ctx context.Context, args map[string]any) (str
 	if st == nil {
 		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
 	}
-	argInt := func(k string) (int64, bool) {
-		switch v := args[k].(type) {
-		case float64:
-			return int64(v), true
-		case int:
-			return int64(v), true
-		case int64:
-			return v, true
-		}
-		return 0, false
-	}
-	argStr := func(k string) string {
-		v, _ := args[k].(string)
-		return v
-	}
 	f := store.ListFilter{Limit: 50}
-	if v, ok := argInt("limit"); ok {
+	if v, ok := argInt(args, "limit"); ok {
 		f.Limit = int(v)
 	}
 	if f.Limit <= 0 {
@@ -138,21 +145,21 @@ func (s *Server) toolListRequests(ctx context.Context, args map[string]any) (str
 	if f.Limit > 200 {
 		f.Limit = 200 // clamp: token-frugal
 	}
-	if v, ok := argInt("offset"); ok {
+	if v, ok := argInt(args, "offset"); ok {
 		f.Offset = int(v)
 	}
 	if f.Offset < 0 {
 		f.Offset = 0
 	}
-	if v, ok := argInt("status_filter"); ok {
+	if v, ok := argInt(args, "status_filter"); ok {
 		f.StatusFilter = int(v)
 	}
-	if v, ok := argInt("since_id"); ok {
+	if v, ok := argInt(args, "since_id"); ok {
 		f.SinceID = v
 	}
-	f.MethodFilter = argStr("method_filter")
-	f.HostFilter = argStr("host_filter")
-	f.PathContains = argStr("path_contains")
+	f.MethodFilter = argStr(args, "method_filter")
+	f.HostFilter = argStr(args, "host_filter")
+	f.PathContains = argStr(args, "path_contains")
 
 	list, err := st.List(f)
 	if err != nil {
@@ -176,6 +183,74 @@ func (s *Server) toolListRequests(ctx context.Context, args map[string]any) (str
 	b, _ := json.Marshal(out)
 	s.audit.Log(audit.Event{Tool: "list_requests", Action: "list", Detail: map[string]any{"count": len(summaries)}})
 	return string(b), nil
+}
+
+// toolGetRequestDetail retorna detalhe de um request capturado. Corpos sao
+// truncados por default (max_body_bytes=8192); flags body_truncated + total_len
+// sinalizam ao AI que o body foi cortado. use body_range p/ paginar.
+func (s *Server) toolGetRequestDetail(ctx context.Context, args map[string]any) (string, error) {
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "get_request_detail", Action: "error", Detail: map[string]any{"err": err.Error()}})
+		return "", err
+	}
+	if st == nil {
+		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
+	}
+	id, ok := argInt(args, "id")
+	if !ok || id <= 0 {
+		s.audit.Log(audit.Event{Tool: "get_request_detail", Action: "error", Detail: map[string]any{"err": "id obrigatorio"}})
+		return "", fmt.Errorf("id obrigatorio: passe o id do request (ex: 42)")
+	}
+	include := argStr(args, "include")
+	if include == "" {
+		include = "headers"
+	}
+	switch include {
+	case "headers", "body", "all":
+	default:
+		s.audit.Log(audit.Event{Tool: "get_request_detail", Action: "error", Detail: map[string]any{"err": "include invalido"}})
+		return "", fmt.Errorf("include invalido: headers|body|all")
+	}
+	maxBody := 8192
+	if v, ok := argInt(args, "max_body_bytes"); ok {
+		maxBody = int(v)
+	}
+	d, err := st.GetDetail(id, include, maxBody, argStr(args, "body_range"))
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "get_request_detail", Action: "error", Detail: map[string]any{"id": id, "err": err.Error()}})
+		return "", err
+	}
+	out := map[string]any{
+		"id":                  d.ID,
+		"ts":                  d.Ts,
+		"method":              d.Method,
+		"url":                 d.URL,
+		"req_headers":         d.ReqHeaders,
+		"req_body":            bodyString(d.ReqBody),
+		"status":              d.Status,
+		"resp_headers":        d.RespHeaders,
+		"resp_body":           bodyString(d.RespBody),
+		"resp_len":            d.RespLen,
+		"req_body_truncated":  d.ReqBodyTruncated,
+		"resp_body_truncated": d.RespBodyTruncated,
+		"req_total_len":       d.ReqTotalLen,
+		"resp_total_len":      d.RespTotalLen,
+	}
+	b, _ := json.Marshal(out)
+	s.audit.Log(audit.Event{Tool: "get_request_detail", Action: "get", Detail: map[string]any{"id": id, "include": include, "req_truncated": d.ReqBodyTruncated, "resp_truncated": d.RespBodyTruncated}})
+	return string(b), nil
+}
+
+// bodyString: corpo em string quando UTF-8 (legivel p/ AI), base64 se binario.
+func bodyString(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	if utf8.Valid(b) {
+		return string(b)
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // toolAddTarget: requer confirmed=true do cliente MCP (PRD §5). Server NAO

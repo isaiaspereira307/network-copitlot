@@ -371,4 +371,84 @@ func TestListRequestsTool_LimitClamp(t *testing.T) {
 	}
 }
 
+func TestGetRequestDetail_TruncatesByDefault(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if st == nil {
+		t.Fatal("nil store for active target")
+	}
+	big := make([]byte, 20000) // > 8192 default
+	for i := range big {
+		big[i] = 'x'
+	}
+	id, err := st.Insert(&store.Request{
+		Ts:          time.Now().UnixMilli(),
+		Method:      "POST",
+		URL:         "https://api.empresa.com/upload",
+		ReqHeaders:  map[string][]string{"Content-Type": {"application/json"}},
+		ReqBody:     big,
+		Status:      201,
+		RespHeaders: map[string][]string{},
+		RespBody:    big,
+		RespLen:     len(big),
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	out, err := callTool(t, s, "get_request_detail", map[string]any{"id": id, "include": "all"})
+	if err != nil {
+		t.Fatalf("get_request_detail: %v", err)
+	}
+	var res map[string]any
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	for _, key := range []string{"id", "ts", "method", "url", "req_headers", "req_body", "status", "resp_headers", "resp_body", "resp_len", "req_body_truncated", "resp_body_truncated", "req_total_len", "resp_total_len"} {
+		if _, ok := res[key]; !ok {
+			t.Errorf("missing key %q in %v", key, res)
+		}
+	}
+	if res["req_body_truncated"] != true || res["resp_body_truncated"] != true {
+		t.Errorf("expected truncated flags, got req=%v resp=%v", res["req_body_truncated"], res["resp_body_truncated"])
+	}
+	if res["req_total_len"] != float64(20000) || res["resp_total_len"] != float64(20000) {
+		t.Errorf("total len = %v/%v, want 20000/20000", res["req_total_len"], res["resp_total_len"])
+	}
+	if len(res["req_body"].(string)) > 8192 || len(res["resp_body"].(string)) > 8192 {
+		t.Errorf("body exceeded 8192: req=%d resp=%d", len(res["req_body"].(string)), len(res["resp_body"].(string)))
+	}
+}
+
+func TestGetRequestDetail_InvalidID(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	if _, err := callTool(t, s, "get_request_detail", map[string]any{}); err == nil {
+		t.Fatal("expected error: missing id")
+	}
+	if _, err := callTool(t, s, "get_request_detail", map[string]any{"id": "abc"}); err == nil {
+		t.Fatal("expected error: non-numeric id")
+	}
+}
+
+func TestGetRequestDetail_NoActiveTarget(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "get_request_detail", map[string]any{"id": 1})
+	if err == nil {
+		t.Fatal("expected error with no active target")
+	}
+}
+
 var _ = time.Now
