@@ -56,6 +56,8 @@ func registerV2Tools(s *Server) {
 	s.tools["search_bodies"] = s.toolSearchBodies
 	// registrar (task 11)
 	s.tools["replay_request"] = s.toolReplayRequest
+	// registrar (task 12)
+	s.tools["set_scope"] = s.toolSetScope
 }
 
 func (s *Server) toolCreateProject(ctx context.Context, args map[string]any) (string, error) {
@@ -396,6 +398,39 @@ func blockedHost(st store.Store, id int64, override string) string {
 		return u.Host
 	}
 	return ""
+}
+
+// toolSetScope persiste in_scope do alvo ativo no meta.yaml (read-modify-write
+// via repo.SetScope). OutOfScopePatterns existentes sao preservados — a tool
+// so toca in_scope. O proxy vivo capta a mudanca no proximo request via
+// mtime-check do meta.yaml (processos separados, sem IPC).
+func (s *Server) toolSetScope(ctx context.Context, args map[string]any) (string, error) {
+	proj, err := s.active.Project()
+	if err != nil || proj == nil {
+		return "", fmt.Errorf("nenhum projeto ativo")
+	}
+	tgt, err := s.active.Target()
+	if err != nil || tgt == nil {
+		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
+	}
+	raw, ok := args["in_scope"]
+	if !ok {
+		s.audit.Log(audit.Event{Tool: "set_scope", Action: "error", Detail: map[string]any{"err": "in_scope obrigatorio"}})
+		return "", fmt.Errorf("in_scope obrigatorio: array de padroes (ex: [\"*.corp\"])")
+	}
+	inScope, _ := raw.([]any)
+	pats := make([]string, 0, len(inScope))
+	for _, x := range inScope {
+		if str, ok := x.(string); ok && str != "" {
+			pats = append(pats, str)
+		}
+	}
+	if err := s.repo.SetScope(proj.Name, tgt.Host, pats, tgt.OutOfScopePatterns); err != nil {
+		s.audit.Log(audit.Event{Tool: "set_scope", Action: "error", Detail: map[string]any{"host": tgt.Host, "err": err.Error()}})
+		return "", err
+	}
+	s.audit.Log(audit.Event{Tool: "set_scope", Action: "set", Detail: map[string]any{"host": tgt.Host, "in_scope": pats}})
+	return fmt.Sprintf("escopo do alvo %s atualizado: in_scope=%v (out_of_scope preservado)", tgt.Host, pats), nil
 }
 
 // toolAddTarget: requer confirmed=true do cliente MCP (PRD §5). Server NAO

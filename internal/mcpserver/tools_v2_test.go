@@ -564,6 +564,68 @@ var _ = time.Now
 // TestReplayTool_RejectsOutOfScope (11.1): alvo ativo com escopo que EXCLUI o
 // host do request capturado -> erro "fora do escopo", nada persistido, e a
 // mensagem cita o host bloqueado.
+// TestSetScopeTool_PersistsAndApplies (12.1): set_scope persiste in_scope no
+// meta.yaml do alvo ativo; recarregando do disco, InScopePatterns refletem a
+// mudanca. OutOfScopePatterns preexistentes sao preservados (nao varridos).
+func TestSetScopeTool_PersistsAndApplies(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{
+		"host":         "api.empresa.com",
+		"confirmed":    true,
+		"in_scope":     []any{"*.old.example.com"},
+		"out_of_scope": []any{"*.admin.empresa.com"},
+	})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	out, err := callTool(t, s, "set_scope", map[string]any{"in_scope": []any{"*.corp"}})
+	if err != nil {
+		t.Fatalf("set_scope: %v", err)
+	}
+	if out == "" {
+		t.Fatal("empty output")
+	}
+
+	repo := projects.NewRepo(getWorkspace(t))
+	tgt, err := repo.LoadTarget("P", "api.empresa.com")
+	if err != nil {
+		t.Fatalf("load target: %v", err)
+	}
+	if len(tgt.InScopePatterns) != 1 || tgt.InScopePatterns[0] != "*.corp" {
+		t.Errorf("InScopePatterns = %v, want [*.corp]", tgt.InScopePatterns)
+	}
+	if len(tgt.OutOfScopePatterns) != 1 || tgt.OutOfScopePatterns[0] != "*.admin.empresa.com" {
+		t.Errorf("OutOfScopePatterns = %v, want [*.admin.empresa.com] (preservado)", tgt.OutOfScopePatterns)
+	}
+}
+
+func TestSetScopeTool_NoActiveTarget(t *testing.T) {
+	s, _ := newTestServer(t)
+	// projeto ativo, mas NENHUM alvo ativo -> erro exato do alvo.
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, err := callTool(t, s, "set_scope", map[string]any{"in_scope": []any{"*.corp"}})
+	if err == nil {
+		t.Fatal("expected error with no active target")
+	}
+	if err.Error() != "nenhum alvo ativo: selecione um alvo com set_active_target" {
+		t.Errorf("err = %q, want mensagem exata de alvo ativo", err.Error())
+	}
+}
+
+func TestSetScopeTool_MissingInScope(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	if _, err := callTool(t, s, "set_scope", map[string]any{}); err == nil {
+		t.Fatal("expected error: in_scope obrigatorio")
+	}
+}
+
 func TestReplayTool_RejectsOutOfScope(t *testing.T) {
 	s, _ := newTestServer(t)
 	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
@@ -714,10 +776,10 @@ func TestReplayTool_OverridesViaTool(t *testing.T) {
 	}
 
 	out, err := callTool(t, s, "replay_request", map[string]any{
-		"id":              id,
-		"method":          "POST",
-		"headers":         map[string]any{"X-New": "novo"},
-		"body":            "corpo-novo",
+		"id":               id,
+		"method":           "POST",
+		"headers":          map[string]any{"X-New": "novo"},
+		"body":             "corpo-novo",
 		"follow_redirects": false,
 	})
 	if err != nil {

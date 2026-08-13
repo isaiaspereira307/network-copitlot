@@ -132,6 +132,13 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("replay_request", s.toolReplayRequest),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("set_scope",
+			mcp.WithDescription("Persist new in-scope patterns for the ACTIVE target. Writes in_scope to the target's meta.yaml on disk, overwriting previous in-scope patterns; existing out-of-scope patterns are preserved. The live proxy picks up the change automatically on its next request via a cheap mtime check of the meta.yaml — no proxy restart required. Pass an empty array to clear all in-scope restrictions (anything not explicitly out-of-scope becomes allowed)."),
+			mcp.WithArray("in_scope", mcp.Required(), mcp.WithStringItems()),
+		),
+		s.wrapTool("set_scope", s.toolSetScope),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.
