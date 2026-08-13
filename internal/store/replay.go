@@ -34,8 +34,11 @@ func (s *SQLiteStore) Replay(id int64, overrides ReplayOverrides, scopeMatch fun
 		rawURL = orig.URL
 	}
 	u, err := url.Parse(rawURL)
-	if err != nil || u.Host == "" {
+	if err != nil {
 		return nil, fmt.Errorf("replay: url invalida %q: %w", rawURL, err)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("replay: url sem host: %q", rawURL)
 	}
 
 	// Scope guard aplica-se ao host FINAL (pos-urlOverride). Tambem valido sem
