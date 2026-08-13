@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	_ "modernc.org/sqlite" // driver puro-Go, sem CGO
 )
@@ -82,11 +84,38 @@ func (s *SQLiteStore) Get(id int64) (*Request, error) {
 }
 
 func (s *SQLiteStore) List(f ListFilter) ([]*RequestSummary, error) {
-	q := `SELECT id, ts, method, url, status, resp_len FROM requests ORDER BY id DESC`
-	if f.Limit > 0 {
-		q += fmt.Sprintf(" LIMIT %d", f.Limit)
+	q := `SELECT id, ts, method, url, status, resp_len FROM requests WHERE 1=1`
+	var args []any
+	if f.MethodFilter != "" {
+		q += ` AND method = ?`
+		args = append(args, f.MethodFilter)
 	}
-	rows, err := s.db.Query(q)
+	if f.StatusFilter != 0 {
+		q += ` AND status = ?`
+		args = append(args, f.StatusFilter)
+	}
+	if f.HostFilter != "" {
+		q += ` AND url LIKE ?`
+		args = append(args, "%"+f.HostFilter+"%")
+	}
+	if f.PathContains != "" {
+		q += ` AND url LIKE ?`
+		args = append(args, "%"+f.PathContains+"%")
+	}
+	if f.SinceID > 0 {
+		q += ` AND id > ?`
+		args = append(args, f.SinceID)
+	}
+	q += ` ORDER BY id DESC`
+	if f.Limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, f.Limit)
+	}
+	if f.Offset > 0 {
+		q += ` OFFSET ?`
+		args = append(args, f.Offset)
+	}
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +151,70 @@ func (s *SQLiteStore) All() ([]*Request, error) {
 }
 
 func (s *SQLiteStore) GetDetail(id int64, include string, maxBody int, bodyRange string) (*RequestDetail, error) {
-	return nil, nil // TODO Task 3
+	r, err := s.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	d := &RequestDetail{
+		ID:      r.ID,
+		Ts:      r.Ts,
+		Method:  r.Method,
+		URL:     r.URL,
+		Status:  r.Status,
+		RespLen: r.RespLen,
+	}
+	switch include {
+	case "all":
+		d.ReqHeaders = r.ReqHeaders
+		d.RespHeaders = r.RespHeaders
+		d.ReqBody, d.ReqTotalLen, d.ReqBodyTruncated = cutBody(r.ReqBody, maxBody, bodyRange)
+		d.RespBody, d.RespTotalLen, d.RespBodyTruncated = cutBody(r.RespBody, maxBody, bodyRange)
+	case "body":
+		d.ReqBody, d.ReqTotalLen, d.ReqBodyTruncated = cutBody(r.ReqBody, maxBody, bodyRange)
+		d.RespBody, d.RespTotalLen, d.RespBodyTruncated = cutBody(r.RespBody, maxBody, bodyRange)
+	default: // headers
+		d.ReqHeaders = r.ReqHeaders
+		d.RespHeaders = r.RespHeaders
+	}
+	return d, nil
+}
+
+// cutBody aplica o orcamento maxBody e depois a janela bodyRange ("start-end")
+// sobre o corpo ja limitado. TotalLen sempre reflete o tamanho original.
+func cutBody(body []byte, maxBody int, rng string) (out []byte, total int, truncated bool) {
+	if maxBody <= 0 {
+		maxBody = 8192
+	}
+	total = len(body)
+	if total > maxBody {
+		body = body[:maxBody]
+		truncated = true
+	}
+	out = body
+	if rng == "" {
+		return
+	}
+	parts := strings.SplitN(rng, "-", 2)
+	if len(parts) != 2 {
+		return
+	}
+	start, err1 := strconv.Atoi(parts[0])
+	end, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end > len(body) {
+		end = len(body)
+	}
+	if start >= end {
+		out = nil
+		return
+	}
+	out = body[start:end]
+	return
 }
 
 func (s *SQLiteStore) SearchBodies(pattern string, scope string, limit int) ([]*BodyMatch, error) {
