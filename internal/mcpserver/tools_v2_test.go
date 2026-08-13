@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -446,6 +447,110 @@ func TestGetRequestDetail_InvalidID(t *testing.T) {
 func TestGetRequestDetail_NoActiveTarget(t *testing.T) {
 	s, _ := newTestServer(t)
 	_, err := callTool(t, s, "get_request_detail", map[string]any{"id": 1})
+	if err == nil {
+		t.Fatal("expected error with no active target")
+	}
+}
+
+func TestSearchBodiesTool_ReturnsSnippetNotBody(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if st == nil {
+		t.Fatal("nil store for active target")
+	}
+	// corpo grande (> 2*snippetWindow) para provar que so o snippet sai
+	filler := strings.Repeat("x", 500)
+	id, err := st.Insert(&store.Request{
+		Ts:       time.Now().UnixMilli(),
+		Method:   "POST",
+		URL:      "https://api.empresa.com/login",
+		ReqBody:  []byte(filler + "NEEDLE_MARK" + filler),
+		Status:   200,
+		RespBody: []byte(filler + "NEEDLE_MARK" + filler),
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	out, err := callTool(t, s, "search_bodies", map[string]any{"query": "NEEDLE_MARK"})
+	if err != nil {
+		t.Fatalf("search_bodies: %v", err)
+	}
+	var res struct {
+		Count   int `json:"count"`
+		Matches []struct {
+			ID      int64  `json:"id"`
+			URL     string `json:"url"`
+			Snippet string `json:"snippet"`
+		} `json:"matches"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	if res.Count != 1 || len(res.Matches) != 1 {
+		t.Fatalf("expected 1 match, got count=%d len=%d body=%s", res.Count, len(res.Matches), out)
+	}
+	m := res.Matches[0]
+	if m.ID != id {
+		t.Errorf("id = %d, want %d", m.ID, id)
+	}
+	if m.URL != "https://api.empresa.com/login" {
+		t.Errorf("url = %q", m.URL)
+	}
+	if !strings.Contains(m.Snippet, "NEEDLE_MARK") {
+		t.Errorf("snippet %q does not contain needle", m.Snippet)
+	}
+	if len(m.Snippet) > 200 {
+		t.Errorf("snippet too long: %d chars", len(m.Snippet))
+	}
+	// token pillar: nenhum campo com corpo completo nas entradas retornadas
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(out), &raw); err != nil {
+		t.Fatalf("unmarshal raw: %v", err)
+	}
+	for _, mm := range raw["matches"].([]any) {
+		mv := mm.(map[string]any)
+		for _, bad := range []string{"req_body", "resp_body", "body", "req_headers", "resp_headers"} {
+			if _, ok := mv[bad]; ok {
+				t.Errorf("body field %q leaked: %v", bad, mv)
+			}
+		}
+		if _, ok := mv["snippet"]; !ok {
+			t.Error("match missing snippet field")
+		}
+	}
+}
+
+func TestSearchBodiesTool_Validation(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	if _, err := callTool(t, s, "search_bodies", map[string]any{}); err == nil {
+		t.Fatal("expected error: missing query")
+	}
+	if _, err := callTool(t, s, "search_bodies", map[string]any{"query": "x", "scope": "nope"}); err == nil {
+		t.Fatal("expected error: invalid scope")
+	}
+	// scope valido + limit clamp nao quebram
+	if _, err := callTool(t, s, "search_bodies", map[string]any{"query": "x", "scope": "resp", "limit": 9999}); err != nil {
+		t.Fatalf("valid call failed: %v", err)
+	}
+}
+
+func TestSearchBodiesTool_NoActiveTarget(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "search_bodies", map[string]any{"query": "x"})
 	if err == nil {
 		t.Fatal("expected error with no active target")
 	}

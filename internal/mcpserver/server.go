@@ -111,6 +111,15 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("get_request_detail", s.toolGetRequestDetail),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("search_bodies",
+			mcp.WithDescription("Search request and response bodies of the active target for a pattern: regex if the query compiles as one, otherwise a case-sensitive substring. Returns short ±80-char snippets with request ids and urls — never full bodies. Scope to request bodies (req), response bodies (resp), or both (default). Follow up interesting hits with get_request_detail for the full request."),
+			mcp.WithString("query", mcp.Required()),
+			mcp.WithString("scope", mcp.Enum("req", "resp", "both")),
+			mcp.WithNumber("limit"),
+		),
+		s.wrapTool("search_bodies", s.toolSearchBodies),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.

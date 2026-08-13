@@ -49,6 +49,8 @@ func registerV2Tools(s *Server) {
 	s.tools["list_requests"] = s.toolListRequests
 	// registrar (task 9)
 	s.tools["get_request_detail"] = s.toolGetRequestDetail
+	// registrar (task 10)
+	s.tools["search_bodies"] = s.toolSearchBodies
 }
 
 func (s *Server) toolCreateProject(ctx context.Context, args map[string]any) (string, error) {
@@ -251,6 +253,63 @@ func bodyString(b []byte) string {
 		return string(b)
 	}
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+// toolSearchBodies busca `query` (regex se compila, senao substring) nos corpos
+// req/resp do alvo ativo. Retorna um snippet curto (+/-80 chars) por hit — o
+// corpo completo JAMAIS sai aqui (token-frugal). Follow-up: get_request_detail.
+func (s *Server) toolSearchBodies(ctx context.Context, args map[string]any) (string, error) {
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "search_bodies", Action: "error", Detail: map[string]any{"err": err.Error()}})
+		return "", err
+	}
+	if st == nil {
+		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
+	}
+	query := argStr(args, "query")
+	if query == "" {
+		s.audit.Log(audit.Event{Tool: "search_bodies", Action: "error", Detail: map[string]any{"err": "query obrigatoria"}})
+		return "", fmt.Errorf("query obrigatoria: padrao a buscar nos corpos (regex ou substring)")
+	}
+	scope := argStr(args, "scope")
+	if scope == "" {
+		scope = "both"
+	}
+	switch scope {
+	case "req", "resp", "both":
+	default:
+		s.audit.Log(audit.Event{Tool: "search_bodies", Action: "error", Detail: map[string]any{"err": "scope invalido"}})
+		return "", fmt.Errorf("scope invalido: req|resp|both")
+	}
+	limit := int64(30)
+	if v, ok := argInt(args, "limit"); ok {
+		limit = v
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	if limit > 100 {
+		limit = 100 // clamp: token-frugal
+	}
+	matches, err := st.SearchBodies(query, scope, int(limit))
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "search_bodies", Action: "error", Detail: map[string]any{"query": query, "err": err.Error()}})
+		return "", err
+	}
+	// ponytail: map manual p/ keys minusculas; BodyMatch sem json tags.
+	hits := make([]map[string]any, 0, len(matches))
+	for _, m := range matches {
+		hits = append(hits, map[string]any{
+			"id":      m.ID,
+			"url":     m.URL,
+			"snippet": m.MatchSnippet,
+		})
+	}
+	out := map[string]any{"count": len(hits), "query": query, "scope": scope, "matches": hits}
+	b, _ := json.Marshal(out)
+	s.audit.Log(audit.Event{Tool: "search_bodies", Action: "search", Detail: map[string]any{"query": query, "scope": scope, "count": len(hits)}})
+	return string(b), nil
 }
 
 // toolAddTarget: requer confirmed=true do cliente MCP (PRD §5). Server NAO
