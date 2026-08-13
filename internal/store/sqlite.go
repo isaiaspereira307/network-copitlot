@@ -333,10 +333,6 @@ func (s *SQLiteStore) SearchBodies(pattern string, scope string, limit int) ([]*
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) Replay(id int64, overrides ReplayOverrides, scopeMatch func(string) bool) (*ReplayResult, error) {
-	return nil, nil // TODO Task 5
-}
-
 func (s *SQLiteStore) ListEndpoints() ([]*Endpoint, error) {
 	return nil, nil // TODO Task 14
 }
