@@ -333,10 +333,6 @@ func (s *SQLiteStore) SearchBodies(pattern string, scope string, limit int) ([]*
 	return out, rows.Err()
 }
 
-func (s *SQLiteStore) ListEndpoints() ([]*Endpoint, error) {
-	return nil, nil // TODO Task 14
-}
-
 func (s *SQLiteStore) DiffRequests(a, b int64, mode string) (*Diff, error) {
 	return nil, nil // TODO Task 15
 }

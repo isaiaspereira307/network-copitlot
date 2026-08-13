@@ -34,6 +34,7 @@ func New(active *projects.ActiveState, repo *projects.Repo, a *audit.Logger) *Se
 // RegisterTools registra as 7 tools v2 no server mcp-go. Idempotente.
 func (s *Server) RegisterTools() {
 	registerV2Tools(s)
+	registerV3Tools(s)
 	if s.mcp.GetTool("create_project") != nil {
 		return // ja registradas
 	}
@@ -139,6 +140,12 @@ func (s *Server) RegisterTools() {
 			mcp.WithArray("in_scope", mcp.Required(), mcp.WithStringItems()),
 		),
 		s.wrapTool("set_scope", s.toolSetScope),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("list_endpoints",
+			mcp.WithDescription("List deduplicated API endpoints for the active target. Dynamic path segments (numeric ids, UUIDs, long hex or base64 tokens) are normalized to {id}, so /users/123 and /users/456 collapse into one endpoint. Each entry reports the HTTP method, normalized path, total hit count, and up to 5 sample request ids for follow-up with get_request_detail. Use this to map the target's API surface before diving into individual requests."),
+		),
+		s.wrapTool("list_endpoints", s.toolListEndpoints),
 	)
 }
 
