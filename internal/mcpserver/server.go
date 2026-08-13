@@ -120,6 +120,18 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("search_bodies", s.toolSearchBodies),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("replay_request",
+			mcp.WithDescription("Re-executes a captured request (id from list_requests) against its target host, guarded by the active target's scope. Optional overrides: url (new target URL), method, headers (string map to set), body (string), follow_redirects (default false — a 3xx is returned as-is; when true, each redirect is re-checked against scope). The replayed exchange is persisted as a NEW request; the result returns only new_request_id, status, resp_len — never bodies. Out-of-scope hosts are blocked with a clear error."),
+			mcp.WithNumber("id", mcp.Required()),
+			mcp.WithString("url"),
+			mcp.WithString("method"),
+			mcp.WithObject("headers", mcp.WithStringItems()),
+			mcp.WithString("body"),
+			mcp.WithBoolean("follow_redirects"),
+		),
+		s.wrapTool("replay_request", s.toolReplayRequest),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.

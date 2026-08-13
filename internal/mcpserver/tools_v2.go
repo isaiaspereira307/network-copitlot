@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/url"
 	"time"
 	"unicode/utf8"
 
 	"github.com/isaias/network-copitlot/internal/audit"
 	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaias/network-copitlot/internal/proxy"
 	"github.com/isaias/network-copitlot/internal/store"
 )
 
@@ -51,6 +54,8 @@ func registerV2Tools(s *Server) {
 	s.tools["get_request_detail"] = s.toolGetRequestDetail
 	// registrar (task 10)
 	s.tools["search_bodies"] = s.toolSearchBodies
+	// registrar (task 11)
+	s.tools["replay_request"] = s.toolReplayRequest
 }
 
 func (s *Server) toolCreateProject(ctx context.Context, args map[string]any) (string, error) {
@@ -310,6 +315,87 @@ func (s *Server) toolSearchBodies(ctx context.Context, args map[string]any) (str
 	b, _ := json.Marshal(out)
 	s.audit.Log(audit.Event{Tool: "search_bodies", Action: "search", Detail: map[string]any{"query": query, "scope": scope, "count": len(hits)}})
 	return string(b), nil
+}
+
+// toolReplayRequest re-executa um request capturado (id) contra o host final,
+// sempre validado pelo scope guard do alvo ativo (security pillar). Overrides
+// opcionais: url, method, headers, body, follow_redirects. Resultado (novo id,
+// status, resp_len) e persistido como novo request; corpos jamais retornados.
+func (s *Server) toolReplayRequest(ctx context.Context, args map[string]any) (string, error) {
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "replay_request", Action: "error", Detail: map[string]any{"err": err.Error()}})
+		return "", err
+	}
+	if st == nil {
+		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
+	}
+	id, ok := argInt(args, "id")
+	if !ok || id <= 0 {
+		s.audit.Log(audit.Event{Tool: "replay_request", Action: "error", Detail: map[string]any{"err": "id obrigatorio"}})
+		return "", fmt.Errorf("id obrigatorio: passe o id do request (ex: 42)")
+	}
+	tgt, err := s.active.Target()
+	if err != nil || tgt == nil {
+		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
+	}
+	// Scope guard construido do target ATIVO; store.Replay aplica ao host final
+	// (pos override) e a cada redirect. Replay aborta se for fora de escopo.
+	sc := proxy.New(tgt)
+	scopeMatch := func(host string) bool { return sc.Matches(&url.URL{Host: host}) }
+
+	ov := store.ReplayOverrides{
+		URLOverride:    argStr(args, "url"),
+		MethodOverride: argStr(args, "method"),
+	}
+	if v, ok := args["follow_redirects"].(bool); ok {
+		ov.FollowRedirects = v
+	}
+	if hm, ok := args["headers"].(map[string]any); ok && len(hm) > 0 {
+		ov.HeaderOverrides = make(map[string]string, len(hm))
+		for k, v := range hm {
+			if vs, ok := v.(string); ok {
+				ov.HeaderOverrides[k] = vs
+			}
+		}
+	}
+	if b, ok := args["body"].(string); ok {
+		ov.BodyOverride = []byte(b)
+	}
+
+	res, err := st.Replay(id, ov, scopeMatch)
+	if err != nil {
+		if errors.Is(err, store.ErrOutOfScope) {
+			host := blockedHost(st, id, ov.URLOverride)
+			s.audit.Log(audit.Event{Tool: "replay_request", Action: "error", Detail: map[string]any{"id": id, "host": host, "err": "out of scope"}})
+			return "", fmt.Errorf("fora do escopo: replay bloqueado para host %s", host)
+		}
+		s.audit.Log(audit.Event{Tool: "replay_request", Action: "error", Detail: map[string]any{"id": id, "err": err.Error()}})
+		return "", err
+	}
+	out := map[string]any{
+		"new_request_id": res.NewRequestID,
+		"status":         res.Status,
+		"resp_len":       res.RespLen,
+	}
+	b, _ := json.Marshal(out)
+	s.audit.Log(audit.Event{Tool: "replay_request", Action: "replay", Detail: map[string]any{"id": id, "new_id": res.NewRequestID, "status": res.Status}})
+	return string(b), nil
+}
+
+// blockedHost extrai o host efetivo (override vence) para citar na mensagem de
+// out-of-scope. Melhor esforco: falha de parse -> vazio.
+func blockedHost(st store.Store, id int64, override string) string {
+	raw := override
+	if raw == "" {
+		if orig, err := st.Get(id); err == nil {
+			raw = orig.URL
+		}
+	}
+	if u, err := url.Parse(raw); err == nil && u.Host != "" {
+		return u.Host
+	}
+	return ""
 }
 
 // toolAddTarget: requer confirmed=true do cliente MCP (PRD §5). Server NAO

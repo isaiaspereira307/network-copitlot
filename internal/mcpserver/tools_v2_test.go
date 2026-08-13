@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -557,3 +560,200 @@ func TestSearchBodiesTool_NoActiveTarget(t *testing.T) {
 }
 
 var _ = time.Now
+
+// TestReplayTool_RejectsOutOfScope (11.1): alvo ativo com escopo que EXCLUI o
+// host do request capturado -> erro "fora do escopo", nada persistido, e a
+// mensagem cita o host bloqueado.
+func TestReplayTool_RejectsOutOfScope(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	// in_scope so casa *.corp.example.com -> api.empresa.com fica FORA
+	_, _ = callTool(t, s, "add_target", map[string]any{
+		"host":      "api.empresa.com",
+		"confirmed": true,
+		"in_scope":  []any{"*.corp.example.com"},
+	})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("open store: %v", err)
+	}
+	id, err := st.Insert(&store.Request{
+		Ts: time.Now().UnixMilli(), Method: "GET",
+		URL: "https://api.empresa.com/users", ReqHeaders: map[string][]string{},
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	_, err = callTool(t, s, "replay_request", map[string]any{"id": id})
+	if err == nil {
+		t.Fatal("expected out-of-scope error")
+	}
+	if !strings.Contains(err.Error(), "fora do escopo") {
+		t.Errorf("err = %v, want mensagem 'fora do escopo'", err)
+	}
+	if !strings.Contains(err.Error(), "api.empresa.com") {
+		t.Errorf("err = %v, deve citar o host bloqueado", err)
+	}
+	// tool call reabre o store (fecha o anterior): reabre p/ inspecionar
+	st, err = s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	if n, _ := st.Count(); n != 1 {
+		t.Errorf("count = %d, want 1 (replay fora de escopo nao persistido)", n)
+	}
+}
+
+// TestReplayTool_HappyPathInScope: escopo do alvo INCLUI o host do upstream
+// (httptest em 127.0.0.1); replay executa, persiste novo request e retorna
+// new_request_id/status/resp_len (sem corpos).
+func TestReplayTool_HappyPathInScope(t *testing.T) {
+	s, _ := newTestServer(t)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("pong"))
+	}))
+	defer upstream.Close()
+	upURL, _ := url.Parse(upstream.URL)
+
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{
+		"host":      "api.empresa.com",
+		"confirmed": true,
+		"in_scope":  []any{upURL.Hostname()},
+	})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("open store: %v", err)
+	}
+	id, err := st.Insert(&store.Request{
+		Ts: time.Now().UnixMilli(), Method: "GET",
+		URL: upstream.URL + "/orig", ReqHeaders: map[string][]string{},
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	out, err := callTool(t, s, "replay_request", map[string]any{"id": id})
+	if err != nil {
+		t.Fatalf("replay_request: %v", err)
+	}
+	var res struct {
+		NewRequestID int64 `json:"new_request_id"`
+		Status       int   `json:"status"`
+		RespLen      int   `json:"resp_len"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	if res.NewRequestID == 0 || res.NewRequestID == id {
+		t.Errorf("new_request_id = %d, want novo id != %d", res.NewRequestID, id)
+	}
+	if res.Status != http.StatusOK || res.RespLen != 4 {
+		t.Errorf("res = %+v, want status 200 resp_len 4", res)
+	}
+	if strings.Contains(out, "pong") {
+		t.Errorf("resposta nao deve conter o corpo: %s", out)
+	}
+	// tool call reabre o store (fecha o anterior): reabre p/ ver o replay
+	st, err = s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	got, err := st.Get(res.NewRequestID)
+	if err != nil || got.Status != http.StatusOK || string(got.RespBody) != "pong" {
+		t.Errorf("persistido = %+v (%v), want 200 'pong'", got, err)
+	}
+}
+
+// TestReplayTool_OverridesViaTool: overrides url/method/headers/body chegam ao
+// upstream (host ainda in-scope).
+func TestReplayTool_OverridesViaTool(t *testing.T) {
+	s, _ := newTestServer(t)
+	var gotMethod, gotXNew, gotBody string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotXNew = r.Header.Get("X-New")
+		b := make([]byte, r.ContentLength)
+		if len(b) > 0 {
+			r.Body.Read(b)
+			gotBody = string(b)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	upURL, _ := url.Parse(upstream.URL)
+
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{
+		"host":      "api.empresa.com",
+		"confirmed": true,
+		"in_scope":  []any{upURL.Hostname()},
+	})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("open store: %v", err)
+	}
+	id, err := st.Insert(&store.Request{
+		Ts: time.Now().UnixMilli(), Method: "GET",
+		URL: upstream.URL, ReqHeaders: map[string][]string{"X-New": {"old"}},
+		ReqBody: []byte("corpo-original"),
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	out, err := callTool(t, s, "replay_request", map[string]any{
+		"id":              id,
+		"method":          "POST",
+		"headers":         map[string]any{"X-New": "novo"},
+		"body":            "corpo-novo",
+		"follow_redirects": false,
+	})
+	if err != nil {
+		t.Fatalf("replay_request: %v", err)
+	}
+	var res struct {
+		Status int `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	if res.Status != http.StatusNoContent {
+		t.Errorf("status = %d, want 204", res.Status)
+	}
+	if gotMethod != "POST" || gotXNew != "novo" || gotBody != "corpo-novo" {
+		t.Errorf("upstream recebeu method=%q x-new=%q body=%q, want POST/novo/corpo-novo", gotMethod, gotXNew, gotBody)
+	}
+}
+
+// TestReplayTool_Validation: id ausente/invalido e sem alvo ativo dão erro
+// claro, sem panic.
+func TestReplayTool_Validation(t *testing.T) {
+	s, _ := newTestServer(t)
+	if _, err := callTool(t, s, "replay_request", map[string]any{"id": 1}); err == nil {
+		t.Fatal("expected error with no active target")
+	}
+
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	if _, err := callTool(t, s, "replay_request", map[string]any{}); err == nil {
+		t.Fatal("expected error: missing id")
+	}
+	if _, err := callTool(t, s, "replay_request", map[string]any{"id": "abc"}); err == nil {
+		t.Fatal("expected error: non-numeric id")
+	}
+}
