@@ -165,3 +165,88 @@ func TestListEndpointsTool_ReturnsDedupedEndpoints(t *testing.T) {
 		t.Errorf("/health = %+v, want hit 1, 1 sample id", ep)
 	}
 }
+
+func setupTarget(t *testing.T, s *Server) {
+	t.Helper()
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+}
+
+func TestSummarizeResponseTool_NoActiveTarget(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "summarize_response", map[string]any{"id": 1})
+	if err == nil {
+		t.Fatal("expected error with no active target")
+	}
+	if err.Error() != "nenhum alvo ativo: selecione um alvo com set_active_target" {
+		t.Errorf("err = %q, want mensagem exata de alvo ativo", err.Error())
+	}
+}
+
+func TestSummarizeResponseTool_HtmlSummary(t *testing.T) {
+	s, _ := newTestServer(t)
+	setupTarget(t, s)
+	htmlBody := `<html><body>
+  <form action="/login" method="POST"><input name="user"><input name="pass"></form>
+  <a href="/profile">Profile</a>
+  <script src="/static/app.js"></script>
+  </body></html>`
+	st, err := s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("open store: %v", err)
+	}
+	id, err := st.Insert(&store.Request{
+		Ts: 1, Method: "GET", URL: "https://api.empresa.com/login",
+		Status: 200, RespLen: len(htmlBody),
+		RespHeaders: map[string][]string{"Content-Type": {"text/html; charset=utf-8"}},
+		RespBody:    []byte(htmlBody),
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	out, err := callTool(t, s, "summarize_response", map[string]any{"id": id})
+	if err != nil {
+		t.Fatalf("summarize_response: %v", err)
+	}
+	var res struct {
+		Kind        string         `json:"kind"`
+		ContentType string         `json:"content_type"`
+		Truncated   bool           `json:"truncated"`
+		TotalLen    int            `json:"total_len"`
+		Detail      map[string]any `json:"detail"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	if res.Kind != "html" || res.ContentType != "text/html; charset=utf-8" {
+		t.Errorf("kind=%q ct=%q", res.Kind, res.ContentType)
+	}
+	if res.Truncated || res.TotalLen != len(htmlBody) {
+		t.Errorf("truncated=%v total=%d, want false/%d", res.Truncated, res.TotalLen, len(htmlBody))
+	}
+	forms, ok := res.Detail["forms"].([]any)
+	if !ok || len(forms) != 1 {
+		t.Fatalf("detail.forms = %#v, want 1 form", res.Detail["forms"])
+	}
+	form0 := forms[0].(map[string]any)
+	if form0["action"] != "/login" || form0["method"] != "POST" {
+		t.Errorf("form[0] = %+v, want action=/login method=POST", form0)
+	}
+	if !strings.Contains(out, "/static/app.js") {
+		t.Errorf("out sem script externo:\n%s", out)
+	}
+}
+
+func TestSummarizeResponseTool_BadOrMissingID(t *testing.T) {
+	s, _ := newTestServer(t)
+	setupTarget(t, s)
+	if _, err := callTool(t, s, "summarize_response", map[string]any{}); err == nil {
+		t.Error("id ausente: esperado erro")
+	}
+	if _, err := callTool(t, s, "summarize_response", map[string]any{"id": 9999}); err == nil {
+		t.Error("id inexistente: esperado erro")
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/isaias/network-copitlot/internal/audit"
+	"github.com/isaias/network-copitlot/internal/summarize"
 )
 
 func registerV3Tools(s *Server) {
@@ -13,6 +14,8 @@ func registerV3Tools(s *Server) {
 	s.tools["list_endpoints"] = s.toolListEndpoints
 	// diff (task 15)
 	s.tools["diff_requests"] = s.toolDiffRequests
+	// summarize (task 16)
+	s.tools["summarize_response"] = s.toolSummarizeResponse
 }
 
 // maxDiffOutLines/maxDiffOutBytes limitam o diff emitido: frugalidade de
@@ -120,5 +123,53 @@ func (s *Server) toolListEndpoints(ctx context.Context, args map[string]any) (st
 	out := map[string]any{"count": len(epsOut), "endpoints": epsOut}
 	b, _ := json.Marshal(out)
 	s.audit.Log(audit.Event{Tool: "list_endpoints", Action: "list", Detail: map[string]any{"count": len(epsOut)}})
+	return string(b), nil
+}
+
+// toolSummarizeResponse resume o body da response de um request capturado do
+// alvo ativo por content-type: HTML (forms/links/scripts/comments), JSON
+// (chaves+tipos, nunca valores), JS (endpoints/calls/tokens). Corpos grandes
+// sao analisados de um prefixo limitado (truncated=true, total_len=N). Nunca
+// despeja o body; para o corpo completo use get_request_detail.
+func (s *Server) toolSummarizeResponse(ctx context.Context, args map[string]any) (string, error) {
+	id, ok := argInt(args, "id")
+	if !ok {
+		return "", fmt.Errorf("id e obrigatorio (numero)")
+	}
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "summarize_response", Action: "error", Detail: map[string]any{"err": err.Error()}})
+		return "", err
+	}
+	if st == nil {
+		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
+	}
+	r, err := st.Get(id)
+	if err != nil {
+		return "", fmt.Errorf("request %d nao encontrado", id)
+	}
+	ct := ""
+	if v := r.RespHeaders["Content-Type"]; len(v) > 0 {
+		ct = v[0]
+	}
+	res := summarize.Body(ct, r.RespBody, summarize.MaxBodyBytes)
+	out := map[string]any{
+		"id":           id,
+		"url":          r.URL,
+		"status":       r.Status,
+		"content_type": ct,
+		"kind":         res.Kind,
+		"truncated":    res.Truncated,
+		"total_len":    res.TotalLen,
+	}
+	if res.Detail != nil {
+		out["detail"] = res.Detail
+	}
+	if res.Note != "" {
+		out["note"] = res.Note
+	}
+	b, _ := json.Marshal(out)
+	s.audit.Log(audit.Event{Tool: "summarize_response", Action: "summarize",
+		Detail: map[string]any{"id": id, "kind": res.Kind, "total_len": res.TotalLen, "truncated": res.Truncated}})
 	return string(b), nil
 }

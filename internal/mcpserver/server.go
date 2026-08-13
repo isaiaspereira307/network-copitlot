@@ -156,6 +156,13 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("diff_requests", s.toolDiffRequests),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("summarize_response",
+			mcp.WithDescription("Summarize the response body of one captured request (id from list_requests) by content type. HTML: forms (action/method/fields), links, external/inline scripts, and interesting comments; JSON: a key/type map — values are never included; JS: endpoint URLs, fetch/XHR/axios call targets, and token hints (JWT, AWS, API keys — truncated to 8 chars). Returns a compact structured summary, never the raw body; oversized bodies are analyzed from a capped prefix (truncated=true, total_len=N). Use to triage responses cheaply before opening one with get_request_detail."),
+			mcp.WithNumber("id", mcp.Required()),
+		),
+		s.wrapTool("summarize_response", s.toolSummarizeResponse),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.
