@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"sync"
 
@@ -186,4 +187,14 @@ func (s *Server) openStoreForActiveTarget() (store.Store, error) {
 func (s *Server) Run(ctx context.Context) error {
 	_ = ctx
 	return mcpsdk.ServeStdio(s.mcp)
+}
+
+// CallTool invoca uma tool registrada fora do protocolo stdio: harness e2e e
+// clientes programaticos. Mesma via que o SDK usa internamente (s.tools).
+func (s *Server) CallTool(name string, args map[string]any) (string, error) {
+	fn, ok := s.tools[name]
+	if !ok {
+		return "", fmt.Errorf("tool %s nao registrada", name)
+	}
+	return fn(context.Background(), args)
 }
