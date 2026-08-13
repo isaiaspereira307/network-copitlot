@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/isaias/network-copitlot/internal/audit"
 	"github.com/isaias/network-copitlot/internal/config"
 	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaias/network-copitlot/internal/store"
 )
 
 func newTestServer(t *testing.T) (*Server, *projects.ActiveState) {
@@ -267,6 +269,105 @@ func TestGetActiveContextTool_Full(t *testing.T) {
 		t.Errorf("request_count missing or wrong type: %T", ctx["request_count"])
 	} else if v != 0 {
 		t.Errorf("request_count = %v, want 0", v)
+	}
+}
+
+func TestListRequestsTool_ReturnsOnlySummary(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if st == nil {
+		t.Fatal("nil store for active target")
+	}
+	for i := 0; i < 3; i++ {
+		_, err := st.Insert(&store.Request{
+			Ts:          time.Now().UnixMilli() + int64(i),
+			Method:      "GET",
+			URL:         fmt.Sprintf("https://api.empresa.com/v%d/users", i),
+			Status:      200,
+			RespLen:     100 + i,
+			ReqBody:     []byte("secret-request-body"),
+			RespBody:    []byte("secret-response-body"),
+			ReqHeaders:  map[string][]string{"Cookie": {"SECRET=1"}},
+			RespHeaders: map[string][]string{},
+		})
+		if err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	out, err := callTool(t, s, "list_requests", map[string]any{})
+	if err != nil {
+		t.Fatalf("list_requests: %v", err)
+	}
+	var res struct {
+		Count    int              `json:"count"`
+		Requests []map[string]any `json:"requests"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	if res.Count != 3 || len(res.Requests) != 3 {
+		t.Fatalf("expected 3 requests, got count=%d len=%d body=%s", res.Count, len(res.Requests), out)
+	}
+	for _, r := range res.Requests {
+		for _, key := range []string{"id", "ts", "method", "url", "status", "resp_len"} {
+			if _, ok := r[key]; !ok {
+				t.Errorf("missing summary key %q in %v", key, r)
+			}
+		}
+		for _, bad := range []string{"req_body", "resp_body", "req_headers", "resp_headers", "notes"} {
+			if _, ok := r[bad]; ok {
+				t.Errorf("body field %q leaked: %v", bad, r)
+			}
+		}
+	}
+}
+
+func TestListRequestsTool_NoActiveTarget(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "list_requests", map[string]any{})
+	if err == nil {
+		t.Fatal("expected error with no active target")
+	}
+}
+
+func TestListRequestsTool_LimitClamp(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	for i := 0; i < 201; i++ {
+		if _, err := st.Insert(&store.Request{Ts: time.Now().UnixMilli() + int64(i), Method: "GET", URL: fmt.Sprintf("https://api.empresa.com/r/%d", i), Status: 200}); err != nil {
+			t.Fatalf("insert %d: %v", i, err)
+		}
+	}
+
+	out, err := callTool(t, s, "list_requests", map[string]any{"limit": 9999})
+	if err != nil {
+		t.Fatalf("list_requests: %v", err)
+	}
+	var res struct {
+		Count int `json:"count"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if res.Count != 200 {
+		t.Errorf("expected clamp to 200, got %d", res.Count)
 	}
 }
 

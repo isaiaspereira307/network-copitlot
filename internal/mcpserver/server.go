@@ -14,13 +14,13 @@ import (
 
 // Server wraps the mcp-go SDK e expoe as 7 tools v2 via stdio.
 type Server struct {
-	active      *projects.ActiveState
-	repo        *projects.Repo
-	audit       *audit.Logger
-	mcp         *mcpsdk.MCPServer
+	active       *projects.ActiveState
+	repo         *projects.Repo
+	audit        *audit.Logger
+	mcp          *mcpsdk.MCPServer
 	currentStore store.Store
-	mu          sync.Mutex // guards currentStore
-	tools       map[string]toolFunc
+	mu           sync.Mutex // guards currentStore
+	tools        map[string]toolFunc
 }
 
 func New(active *projects.ActiveState, repo *projects.Repo, a *audit.Logger) *Server {
@@ -87,6 +87,19 @@ func (s *Server) RegisterTools() {
 			mcp.WithDescription("Retorna projeto/alvo ativos e contagem de requests"),
 		),
 		s.wrapTool("get_active_context", s.toolGetActiveContext),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("list_requests",
+			mcp.WithDescription("List captured requests paginated by recency. Returns ONLY summary fields (id, ts, method, url, status, resp_len) — never bodies. Use filters to narrow; default limit=50. Page with offset/since_id. Pick interesting ids then call get_request_detail."),
+			mcp.WithString("method_filter"),
+			mcp.WithNumber("status_filter"),
+			mcp.WithString("host_filter"),
+			mcp.WithString("path_contains"),
+			mcp.WithNumber("limit"),
+			mcp.WithNumber("offset"),
+			mcp.WithNumber("since_id"),
+		),
+		s.wrapTool("list_requests", s.toolListRequests),
 	)
 }
 

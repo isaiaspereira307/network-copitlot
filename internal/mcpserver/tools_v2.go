@@ -8,6 +8,7 @@ import (
 
 	"github.com/isaias/network-copitlot/internal/audit"
 	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaias/network-copitlot/internal/store"
 )
 
 // toolFunc: assinatura comum de todas as tools v2.
@@ -24,6 +25,8 @@ func registerV2Tools(s *Server) {
 	s.tools["set_active_target"] = s.toolSetActiveTarget
 	// context (task 14)
 	s.tools["get_active_context"] = s.toolGetActiveContext
+	// registrar (task 8)
+	s.tools["list_requests"] = s.toolListRequests
 }
 
 func (s *Server) toolCreateProject(ctx context.Context, args map[string]any) (string, error) {
@@ -96,6 +99,79 @@ func (s *Server) toolGetActiveContext(ctx context.Context, args map[string]any) 
 		}
 	}
 	b, _ := json.Marshal(out)
+	return string(b), nil
+}
+
+// toolListRequests lista requests do alvo ativo (apenas resumo, nunca corpos).
+// Paginado por recencia (id DESC). limit default 50, clamp max 200 (token-frugal).
+func (s *Server) toolListRequests(ctx context.Context, args map[string]any) (string, error) {
+	st, err := s.openStoreForActiveTarget()
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "list_requests", Action: "error", Detail: map[string]any{"err": err.Error()}})
+		return "", err
+	}
+	if st == nil {
+		return "", fmt.Errorf("nenhum alvo ativo: selecione um alvo com set_active_target")
+	}
+	argInt := func(k string) (int64, bool) {
+		switch v := args[k].(type) {
+		case float64:
+			return int64(v), true
+		case int:
+			return int64(v), true
+		case int64:
+			return v, true
+		}
+		return 0, false
+	}
+	argStr := func(k string) string {
+		v, _ := args[k].(string)
+		return v
+	}
+	f := store.ListFilter{Limit: 50}
+	if v, ok := argInt("limit"); ok {
+		f.Limit = int(v)
+	}
+	if f.Limit <= 0 {
+		f.Limit = 50
+	}
+	if f.Limit > 200 {
+		f.Limit = 200 // clamp: token-frugal
+	}
+	if v, ok := argInt("offset"); ok {
+		f.Offset = int(v)
+	}
+	if v, ok := argInt("status_filter"); ok {
+		f.StatusFilter = int(v)
+	}
+	if v, ok := argInt("since_id"); ok {
+		f.SinceID = v
+	}
+	f.MethodFilter = argStr("method_filter")
+	f.HostFilter = argStr("host_filter")
+	f.PathContains = argStr("path_contains")
+
+	list, err := st.List(f)
+	if err != nil {
+		s.audit.Log(audit.Event{Tool: "list_requests", Action: "error", Detail: map[string]any{"err": err.Error()}})
+		return "", err
+	}
+	// ponytail: map manual p/ keys minusculas (id, ts, method, url, status, resp_len);
+	// RequestSummary sem json tags. Corpos jamais saem aqui.
+	summaries := make([]map[string]any, 0, len(list))
+	for _, sm := range list {
+		summaries = append(summaries, map[string]any{
+			"id":       sm.ID,
+			"ts":       sm.Ts,
+			"method":   sm.Method,
+			"url":      sm.URL,
+			"status":   sm.Status,
+			"resp_len": sm.RespLen,
+		})
+	}
+	out := map[string]any{"count": len(summaries), "requests": summaries}
+	b, _ := json.Marshal(out)
+	s.audit.Log(audit.Event{Tool: "list_requests", Action: "list", Detail: map[string]any{"count": len(summaries)}})
 	return string(b), nil
 }
 
