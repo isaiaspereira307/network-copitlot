@@ -137,6 +137,96 @@ func TestRepo_ProjectDir_Correct(t *testing.T) {
 	}
 }
 
+func TestRepo_UpdateTarget_MergesScope(t *testing.T) {
+	r := newTestRepo(t)
+	if err := r.CreateProject(&Project{Name: "P", Type: ProjectBugBounty, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	tgt := &Target{
+		Host:            "api.empresa.com",
+		Notes:           "nota original",
+		InScopePatterns: []string{"*.empresa.com"},
+		CreatedAt:       time.Now().UTC().Truncate(time.Second),
+	}
+	if err := r.AddTarget("P", tgt); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+
+	loaded, err := r.LoadTarget("P", "api.empresa.com")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	loaded.InScopePatterns = []string{"*.corp"}
+	loaded.OutOfScopePatterns = []string{"mail.empresa.com"}
+	if err := r.UpdateTarget("P", loaded); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	got, err := r.LoadTarget("P", "api.empresa.com")
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(got.InScopePatterns) != 1 || got.InScopePatterns[0] != "*.corp" {
+		t.Errorf("in_scope = %v, want [*.corp]", got.InScopePatterns)
+	}
+	if len(got.OutOfScopePatterns) != 1 || got.OutOfScopePatterns[0] != "mail.empresa.com" {
+		t.Errorf("out_of_scope = %v, want [mail.empresa.com]", got.OutOfScopePatterns)
+	}
+	if got.Notes != "nota original" {
+		t.Errorf("notes = %q, want preserved", got.Notes)
+	}
+	if !got.CreatedAt.Equal(tgt.CreatedAt) {
+		t.Errorf("created_at = %v, want preserved", got.CreatedAt)
+	}
+}
+
+func TestRepo_UpdateTarget_MissingProjectAndTarget(t *testing.T) {
+	r := newTestRepo(t)
+	if err := r.CreateProject(&Project{Name: "P", Type: ProjectBugBounty, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	tgt := &Target{Host: "x.com", CreatedAt: time.Now()}
+	if err := r.UpdateTarget("NOPE", tgt); err == nil {
+		t.Fatal("expected error for missing project")
+	}
+	if err := r.UpdateTarget("P", tgt); err == nil {
+		t.Fatal("expected error for missing target")
+	}
+}
+
+func TestRepo_SetScope(t *testing.T) {
+	r := newTestRepo(t)
+	if err := r.CreateProject(&Project{Name: "P", Type: ProjectBugBounty, CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	tgt := &Target{Host: "api.empresa.com", Notes: "n", CreatedAt: time.Now().UTC().Truncate(time.Second)}
+	if err := r.AddTarget("P", tgt); err != nil {
+		t.Fatalf("add: %v", err)
+	}
+	if err := r.SetScope("P", "api.empresa.com", []string{"*.corp"}, []string{"mail.empresa.com"}); err != nil {
+		t.Fatalf("set_scope: %v", err)
+	}
+	got, err := r.LoadTarget("P", "api.empresa.com")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(got.InScopePatterns) != 1 || got.InScopePatterns[0] != "*.corp" {
+		t.Errorf("in_scope = %v, want [*.corp]", got.InScopePatterns)
+	}
+	if len(got.OutOfScopePatterns) != 1 || got.OutOfScopePatterns[0] != "mail.empresa.com" {
+		t.Errorf("out_of_scope = %v, want [mail.empresa.com]", got.OutOfScopePatterns)
+	}
+	if got.Notes != "n" {
+		t.Errorf("notes = %q, want preserved", got.Notes)
+	}
+	if err := r.SetScope("NOPE", "x.com", nil, nil); err == nil {
+		t.Fatal("expected error for missing project")
+	}
+	if err := r.SetScope("P", "x.com", nil, nil); err == nil {
+		t.Fatal("expected error for missing target")
+	}
+}
+
 func TestRepo_LoadTarget_PreservesIOError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod 0000 does not block owner access on windows")

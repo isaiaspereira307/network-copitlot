@@ -147,6 +147,37 @@ func (r *Repo) LoadTarget(projectName, host string) (*Target, error) {
 	return &t, nil
 }
 
+func (r *Repo) UpdateTarget(projectName string, t *Target) error {
+	exists, err := r.ProjectExists(projectName)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("projeto nao existe: %s", projectName)
+	}
+	exists, err = r.TargetExists(projectName, t.Host)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("alvo nao encontrado: %s/%s", projectName, t.Host)
+	}
+	if err := t.Validate(); err != nil {
+		return err
+	}
+	return writeYAML(filepath.Join(r.targetDir(projectName, t.Host), "meta.yaml"), t)
+}
+
+func (r *Repo) SetScope(projectName, host string, inScope, outOfScope []string) error {
+	t, err := r.LoadTarget(projectName, host)
+	if err != nil {
+		return err
+	}
+	t.InScopePatterns = inScope
+	t.OutOfScopePatterns = outOfScope
+	return r.UpdateTarget(projectName, t)
+}
+
 func (r *Repo) ListTargets(projectName string) ([]*Target, error) {
 	base := filepath.Join(r.projectDir(projectName), "targets")
 	entries, err := os.ReadDir(base)
