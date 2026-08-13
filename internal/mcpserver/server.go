@@ -147,6 +147,15 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("list_endpoints", s.toolListEndpoints),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("diff_requests",
+			mcp.WithDescription("Compare two captured requests of the active target with a minimal line-based unified diff (prefix ' ' unchanged, '-' only in A, '+' only in B). mode selects what to diff: resp (default, response bodies), req (request bodies), or headers (request+response headers as lines). Returns changed_a/changed_b counts plus a truncated diff (truncated=true, total=... when over budget) so large bodies never flood the context window. Pass ids from list_requests to find what changed between two exchanges, e.g. a token rotating or an API shape change."),
+			mcp.WithNumber("id_a", mcp.Required()),
+			mcp.WithNumber("id_b", mcp.Required()),
+			mcp.WithString("mode", mcp.Enum("resp", "req", "headers")),
+		),
+		s.wrapTool("diff_requests", s.toolDiffRequests),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.

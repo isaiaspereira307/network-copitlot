@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,91 @@ func TestListEndpointsTool_NoActiveTarget(t *testing.T) {
 	}
 	if err.Error() != "nenhum alvo ativo: selecione um alvo com set_active_target" {
 		t.Errorf("err = %q, want mensagem exata de alvo ativo", err.Error())
+	}
+}
+
+func TestDiffRequestsTool_NoActiveTarget(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, err := callTool(t, s, "diff_requests", map[string]any{"id_a": 1, "id_b": 2})
+	if err == nil {
+		t.Fatal("expected error with no active target")
+	}
+	if err.Error() != "nenhum alvo ativo: selecione um alvo com set_active_target" {
+		t.Errorf("err = %q, want mensagem exata de alvo ativo", err.Error())
+	}
+}
+
+func TestDiffRequestsTool_UnifiedDiff(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	st, err := s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("open store: %v", err)
+	}
+	idA, err := st.Insert(&store.Request{
+		Ts: 1, Method: "GET", URL: "https://api.empresa.com/users",
+		Status: 200, RespLen: 40,
+		RespBody: []byte("{\"ok\": true}\n{\"token\": \"abc\"}\n"),
+	})
+	if err != nil {
+		t.Fatalf("insert A: %v", err)
+	}
+	idB, err := st.Insert(&store.Request{
+		Ts: 2, Method: "GET", URL: "https://api.empresa.com/users",
+		Status: 200, RespLen: 40,
+		RespBody: []byte("{\"ok\": true}\n{\"token\": \"def\"}\n{\"extra\": true}\n"),
+	})
+	if err != nil {
+		t.Fatalf("insert B: %v", err)
+	}
+
+	out, err := callTool(t, s, "diff_requests", map[string]any{"id_a": idA, "id_b": idB, "mode": "resp"})
+	if err != nil {
+		t.Fatalf("diff_requests: %v", err)
+	}
+	var res struct {
+		ID_A     float64  `json:"id_a"`
+		ID_B     float64  `json:"id_b"`
+		Mode     string   `json:"mode"`
+		ChangedA int      `json:"changed_a"`
+		ChangedB int      `json:"changed_b"`
+		Diff     []string `json:"diff"`
+		Trunc    bool     `json:"truncated"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal: %v body=%s", err, out)
+	}
+	if res.ID_A != float64(idA) || res.ID_B != float64(idB) || res.Mode != "resp" {
+		t.Errorf("meta = %+v", res)
+	}
+	if res.ChangedA != 1 || res.ChangedB != 2 {
+		t.Errorf("changed_a=%d changed_b=%d, want 1/2", res.ChangedA, res.ChangedB)
+	}
+	if res.Trunc {
+		t.Errorf("truncated=true para diff pequeno")
+	}
+	joined := strings.Join(res.Diff, "\n")
+	if !strings.Contains(joined, `-{"token": "abc"}`) || !strings.Contains(joined, `+{"token": "def"}`) {
+		t.Errorf("diff sem linhas +/-:\n%s", joined)
+	}
+}
+
+func TestDiffRequestsTool_BadArgs(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "api.empresa.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "api.empresa.com"})
+
+	if _, err := callTool(t, s, "diff_requests", map[string]any{}); err == nil {
+		t.Error("id_a/id_b ausentes: esperado erro")
+	}
+	if _, err := callTool(t, s, "diff_requests", map[string]any{"id_a": 1, "id_b": 2, "mode": "bogus"}); err == nil {
+		t.Error("mode invalido: esperado erro")
 	}
 }
 
