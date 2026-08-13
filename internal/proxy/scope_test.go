@@ -8,7 +8,7 @@ import (
 )
 
 func TestScope_InScopePattern(t *testing.T) {
-	s := newScope(&projects.Target{
+	s := New(&projects.Target{
 		Host:            "api.empresa.com",
 		InScopePatterns: []string{"*.empresa.com", "empresa.com"},
 	})
@@ -23,14 +23,14 @@ func TestScope_InScopePattern(t *testing.T) {
 	}
 	for _, tc := range cases {
 		u, _ := url.Parse(tc.url)
-		if got := s.matches(u); got != tc.want {
+		if got := s.Matches(u); got != tc.want {
 			t.Errorf("%s: got %v want %v", tc.url, got, tc.want)
 		}
 	}
 }
 
 func TestScope_OutOfScopeOverrides(t *testing.T) {
-	s := newScope(&projects.Target{
+	s := New(&projects.Target{
 		Host:               "api.empresa.com",
 		InScopePatterns:    []string{"*.empresa.com"},
 		OutOfScopePatterns: []string{"*.admin.empresa.com"},
@@ -45,7 +45,7 @@ func TestScope_OutOfScopeOverrides(t *testing.T) {
 	}
 	for _, tc := range cases {
 		u, _ := url.Parse(tc.url)
-		if got := s.matches(u); got != tc.want {
+		if got := s.Matches(u); got != tc.want {
 			t.Errorf("%s: got %v want %v", tc.url, got, tc.want)
 		}
 	}
@@ -53,18 +53,18 @@ func TestScope_OutOfScopeOverrides(t *testing.T) {
 
 func TestScope_EmptyPatterns_AllowAll(t *testing.T) {
 	// sem patterns: permite tudo (default confiante; ativo so via add_target).
-	s := newScope(&projects.Target{Host: "x.com"})
+	s := New(&projects.Target{Host: "x.com"})
 	u, _ := url.Parse("https://anything.com/")
-	if !s.matches(u) {
+	if !s.Matches(u) {
 		t.Error("empty scope should allow all")
 	}
 }
 
 func TestScope_NoTarget_RejectsAll(t *testing.T) {
 	// sem target: nao ha onde gravar; rejeita (evita captura fora de escopo).
-	s := newScope(nil)
+	s := New(nil)
 	u, _ := url.Parse("https://x.com/")
-	if s.matches(u) {
+	if s.Matches(u) {
 		t.Error("nil target should reject all")
 	}
 }

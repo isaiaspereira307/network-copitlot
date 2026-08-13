@@ -63,7 +63,7 @@ func newTestProxy(t *testing.T, tgt *projects.Target) (*Proxy, string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	p := New(st, caDir)
+	p := NewProxy(st, caDir)
 	if tgt != nil {
 		p.SetTarget(tgt)
 	}

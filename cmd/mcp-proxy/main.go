@@ -88,7 +88,7 @@ sem body (apenas metadados, conforme PRD §4.1). O CA esta em
 			}
 			defer st.Close()
 			caDir, _ := defaultCADir()
-			p := proxy.New(st, caDir)
+			p := proxy.NewProxy(st, caDir)
 			p.SetTarget(tgt)
 			if err := p.Start(addr); err != nil {
 				return err

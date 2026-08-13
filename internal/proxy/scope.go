@@ -7,24 +7,24 @@ import (
 	"github.com/isaias/network-copitlot/internal/projects"
 )
 
-// scope decide se um request HTTP esta dentro do escopo do alvo ativo.
+// Scope decide se um request HTTP esta dentro do escopo do alvo ativo.
 // Regras (PRD §4.1 "Escopo"):
 //   1. Sem target ativo: tudo recusado (evita captura fora de escopo).
 //   2. Out-of-scope patterns vencem: se casar, recusado.
 //   3. In-scope patterns vazias: permite tudo o que sobrou.
 //   4. In-scope patterns preenchidas: precisa casar com alguma.
-type scope struct {
+type Scope struct {
 	target *projects.Target
 }
 
-func newScope(t *projects.Target) *scope {
-	return &scope{target: t}
+func New(t *projects.Target) *Scope {
+	return &Scope{target: t}
 }
 
-// matches retorna true se o URL do request esta dentro do escopo.
+// Matches retorna true se o URL do request esta dentro do escopo.
 // Match basico: pattern == host (literal) ou pattern com prefixo "*."
 // casa qualquer subdominio. Comparacao case-insensitive.
-func (s *scope) matches(u *url.URL) bool {
+func (s *Scope) Matches(u *url.URL) bool {
 	if s == nil || s.target == nil {
 		return false
 	}

@@ -39,15 +39,15 @@ type Proxy struct {
 
 	mu               sync.Mutex
 	target           *projects.Target
-	scope            *scope
+	scope            *Scope
 	server           *http.Server
 	ln               net.Listener
 	strictUpstream   bool // false = InsecureSkipVerify no upstream (default pentest)
 }
 
-// New cria um Proxy. caDir e onde EnsureCA persiste/le o CA.
+// NewProxy cria um Proxy. caDir e onde EnsureCA persiste/le o CA.
 // O proxy so escuta apos Start().
-func New(s store.Store, caDir string) *Proxy {
+func NewProxy(s store.Store, caDir string) *Proxy {
 	return &Proxy{store: s, caDir: caDir, logger: log.Default()}
 }
 
@@ -57,7 +57,7 @@ func (p *Proxy) SetTarget(t *projects.Target) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.target = t
-	p.scope = newScope(t)
+	p.scope = New(t)
 }
 
 // Target retorna o target ativo (ou nil). Util para diagnosticos.
@@ -177,7 +177,7 @@ func (p *Proxy) onRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Reque
 		url:     req.URL.String(),
 		headers: cloneHeaders(req.Header),
 	}
-	if scp != nil && scp.matches(req.URL) {
+	if scp != nil && scp.Matches(req.URL) {
 		cap.inScope = true
 		if req.Body != nil {
 			b, _ := io.ReadAll(req.Body)
