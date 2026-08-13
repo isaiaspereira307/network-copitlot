@@ -33,10 +33,24 @@ A native-MCP interception proxy. Point your browser at it, browse your authorize
 
 ## 📦 Installation
 
+### go install (requires Go 1.25+)
+
+```bash
+go install github.com/isaiaspereira307/network-copitlot/cmd/mcp-proxy@latest
+```
+
+Installs the `mcp-proxy` binary into `$(go env GOPATH)/bin`. Add that directory to your `PATH` if it isn't already.
+
+Pre-compiled binaries for Linux (amd64/arm64) and Windows (amd64) are attached to every [GitHub Release](https://github.com/isaiaspereira307/network-copitlot/releases) — the workflow builds them automatically when a `v*` tag is pushed:
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
 ### From source (requires Go 1.25+)
 
 ```bash
-git clone https://github.com/isaias/network-copitlot
+git clone https://github.com/isaiaspereira307/network-copitlot
 cd network-copitlot
 go build -o mcp-proxy ./cmd/mcp-proxy
 sudo mv mcp-proxy /usr/local/bin/   # or anywhere in PATH

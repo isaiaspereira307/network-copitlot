@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 	"github.com/spf13/cobra"
 )
 

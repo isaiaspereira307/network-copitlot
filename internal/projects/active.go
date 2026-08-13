@@ -3,7 +3,7 @@ package projects
 import (
 	"fmt"
 
-	"github.com/isaias/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
 )
 
 type ActiveState struct {

@@ -1,4 +1,4 @@
-module github.com/isaias/network-copitlot
+module github.com/isaiaspereira307/network-copitlot
 
 go 1.25.5
 

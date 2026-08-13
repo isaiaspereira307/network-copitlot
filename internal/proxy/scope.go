@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 )
 
 // Scope decide se um request HTTP esta dentro do escopo do alvo ativo.

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpsdk "github.com/mark3labs/mcp-go/server"
 )

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 )
 
 func TestListEndpointsTool_NoActiveTarget(t *testing.T) {

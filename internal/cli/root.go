@@ -1,8 +1,8 @@
 package cli
 
 import (
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/spf13/cobra"
 )
 

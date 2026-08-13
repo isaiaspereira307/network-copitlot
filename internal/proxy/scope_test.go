@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 )
 
 func TestScope_InScopePattern(t *testing.T) {

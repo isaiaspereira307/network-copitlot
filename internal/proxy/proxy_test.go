@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 	"gopkg.in/yaml.v3"
 )
 

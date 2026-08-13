@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/elazarl/goproxy"
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 )
 
 // Proxy e o MITM HTTP/HTTPS. Reusa o store ja existente para gravar

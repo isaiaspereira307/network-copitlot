@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
 )
 
 func newTestActive(t *testing.T) (*ActiveState, *config.Config) {

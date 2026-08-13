@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 )
 
 func newTestServer(t *testing.T) (*Server, *projects.ActiveState) {

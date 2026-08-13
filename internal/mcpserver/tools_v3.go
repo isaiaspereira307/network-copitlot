@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/summarize"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/summarize"
 )
 
 func registerV3Tools(s *Server) {

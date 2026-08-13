@@ -33,7 +33,7 @@
 ## Assumptions
 
 - Repositório atualmente vazio (apenas `PRD-mcp-proxy-golang.md`). Este plano **constrói a v2.0 do zero** incluindo o scaffold Go mínimo necessário.
-- O módulo Go se chama `github.com/isaias/network-copitlot` (ajustar se o usuário preferir outro path; é o único lugar onde o path aparece).
+- O módulo Go se chama `github.com/isaiaspereira307/network-copitlot` (ajustar se o usuário preferir outro path; é o único lugar onde o path aparece).
 - v1 tools MCP (`list_requests`, `get_request_detail`, `replay_request`, `set_scope`, `search_bodies`) **NÃO** estão sendo implementadas aqui. A v2.0 assume que existe um `store.Store` (interface definida na Task 5) que as tools v1 consomem; tools v1 virão em plano separado.
 - Migration do v1 store flat (`requests.db` na raiz) para v2 per-target é **idempotente** e silenciosa se não houver dados v1.
 
@@ -86,10 +86,10 @@ mcp-proxy/
 
 ```bash
 cd mcp-proxy
-go mod init github.com/isaias/network-copitlot
+go mod init github.com/isaiaspereira307/network-copitlot
 ```
 
-Expected: arquivo `go.mod` criado com `module github.com/isaias/network-copitlot` e `go 1.23`.
+Expected: arquivo `go.mod` criado com `module github.com/isaiaspereira307/network-copitlot` e `go 1.23`.
 
 - [ ] **Step 2: Add minimal main.go**
 
@@ -1006,7 +1006,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
 )
 
 func newTestActive(t *testing.T) (*ActiveState, *config.Config) {
@@ -1103,7 +1103,7 @@ package projects
 import (
 	"fmt"
 
-	"github.com/isaias/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
 )
 
 type ActiveState struct {
@@ -2025,8 +2025,8 @@ package mcpserver
 import (
 	"context"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 )
 
 // mcpserver alias para evitar import circular quando o mcp-go SDK
@@ -2094,9 +2094,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 )
 
 func newTestServer(t *testing.T) (*Server, *projects.ActiveState) {
@@ -2218,8 +2218,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 )
 
 // toolFunc e a assinatura comum de todas as tools v2.
@@ -2592,9 +2592,9 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 
 	importmcpsdk "github.com/mark3labs/mcp-go/server"
 )
@@ -2751,9 +2751,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/spf13/cobra"
 )
 
@@ -2841,9 +2841,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/spf13/cobra"
 )
 
@@ -2900,8 +2900,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/spf13/cobra"
 )
 
@@ -3001,8 +3001,8 @@ Criar `cmd/mcp-proxy/root.go`:
 package main
 
 import (
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/spf13/cobra"
 )
 
@@ -3129,8 +3129,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/spf13/cobra"
 )
 
@@ -3282,7 +3282,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 )
 
 func TestNew_NotNil(t *testing.T) {
@@ -3320,7 +3320,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 )
 
 type Proxy struct {
@@ -3370,9 +3370,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/spf13/cobra"
 )
 

@@ -10,10 +10,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/proxy"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/proxy"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 )
 
 // toolFunc: assinatura comum de todas as tools v2.

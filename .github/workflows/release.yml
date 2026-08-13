@@ -1,0 +1,49 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            ext: ""
+          - os: linux
+            arch: arm64
+            ext: ""
+          - os: windows
+            arch: amd64
+            ext: .exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} \
+            go build -trimpath -ldflags "-s -w" \
+            -o dist/mcp-proxy_${{ matrix.os }}_${{ matrix.arch }}${{ matrix.ext }} ./cmd/mcp-proxy
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          case "${{ matrix.os }}" in
+            windows) zip -r mcp-proxy_${{ matrix.os }}_${{ matrix.arch }}.zip mcp-proxy_${{ matrix.os }}_${{ matrix.arch }}.exe ;;
+            *) tar -czf mcp-proxy_${{ matrix.os }}_${{ matrix.arch }}.tar.gz mcp-proxy_${{ matrix.os }}_${{ matrix.arch }} ;;
+          esac
+          sha256sum mcp-proxy_* > checksums.txt
+          ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*

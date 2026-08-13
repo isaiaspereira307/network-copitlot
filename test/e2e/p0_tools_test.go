@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/isaias/network-copitlot/internal/audit"
-	"github.com/isaias/network-copitlot/internal/config"
-	"github.com/isaias/network-copitlot/internal/mcpserver"
-	"github.com/isaias/network-copitlot/internal/projects"
-	"github.com/isaias/network-copitlot/internal/proxy"
-	"github.com/isaias/network-copitlot/internal/store"
+	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/config"
+	"github.com/isaiaspereira307/network-copitlot/internal/mcpserver"
+	"github.com/isaiaspereira307/network-copitlot/internal/projects"
+	"github.com/isaiaspereira307/network-copitlot/internal/proxy"
+	"github.com/isaiaspereira307/network-copitlot/internal/store"
 )
 
 // TestE2E_P0_Tools cobre o fluxo completo Sprint 1 (P0): browse pelo proxy
