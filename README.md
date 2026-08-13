@@ -7,7 +7,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-purple)](https://modelcontextprotocol.io)
 [![Platform: Linux/macOS/Windows](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)]()
 
-A native-MCP interception proxy. Point your browser at it, browse your authorized target, and an AI assistant (Claude) can query every captured transaction as MCP tools.
+A native-MCP interception proxy. Point your browser at it, browse your authorized target, and an AI assistant (Claude) manages projects/targets over MCP; reading and replaying captured transactions lands in Sprint 1.
 
 ```
   browser ─── HTTP/HTTPS ──▶  mcp-proxy  ──── upstream
@@ -24,7 +24,7 @@ A native-MCP interception proxy. Point your browser at it, browse your authorize
 
 - **Real MITM** for HTTP and HTTPS (auto-generated CA, one-time install).
 - **Per-target storage** — separate SQLite for every host you add.
-- **MCP tools** to list, inspect, and replay captured transactions.
+- **MCP tools** to manage projects/targets (list/inspect/replay of transactions lands in Sprint 1).
 - **Hard scope guard** — out-of-scope traffic is logged without bodies.
 - **Zero CGO, zero runtime deps** — single static binary.
 - **Audit log** with automatic redaction of secrets (`password`, `token`, `api_key`, etc).
@@ -131,9 +131,9 @@ Restart Claude Desktop. You now have access to these tools:
 
 Then in Claude:
 
-> *"List the last 20 requests to api.empresa.com that returned 500."*
+> *"What's the current project and target?"*
 
-Claude calls `get_active_context`, queries the SQLite directly, and answers. The capture is fully structured — no grepping pcap files.
+Claude calls `get_active_context`, which returns the active project, target, and stored request count. Reading and replaying individual transactions (`list_requests`, `get_request_detail`, `replay_request`, `search_bodies`) is not shipped yet — it lands in Sprint 1 of the current plan (see Roadmap below).
 
 ---
 
@@ -157,7 +157,7 @@ Claude calls `get_active_context`, queries the SQLite directly, and answers. The
                             │  └────────┘  │
                             │              │
                             │  ┌────────┐  │
-                            │  │  MCP   │──┼── tools to list/get/replay
+                            │  │  MCP   │──┼── management tools; list/replay in Sprint 1
                             │  └────────┘  │
                             └──────────────┘
 ```
@@ -204,7 +204,7 @@ Browsing `https://api.empresa.com/users` is captured with body. `https://admin.e
 Every MCP tool call writes a JSON line to `~/.mcp-proxy/audit.log`. Values of keys matching `password`, `passphrase`, `privatekey`, `api_key`, `secret`, `token`, `credential`, `authorization` are replaced with `"[redacted]"` before writing. Recursive into nested maps and slices.
 
 ```json
-{"ts":"2026-08-01T12:34:56Z","tool":"replay_request","action":"replay","detail":{"id":42,"password":"[redacted]"}}
+{"ts":"2026-08-01T12:34:56Z","tool":"get_active_context","detail":{"project":"H1-EMPRESA","password":"[redacted]"}}
 ```
 
 ---
@@ -244,7 +244,7 @@ Read [docs/proxy.md](docs/proxy.md) for the threat model and the full PRD lives 
 
 This is **v2.x** of the project. Done so far:
 
-- ✅ **v1**: MITM proxy + 5 MCP tools (`list_requests`, `get_request_detail`, `replay_request`, `set_scope`, `search_bodies`).
+- ⚠️ **v1 (parcial)**: proxy MITM + CA + storage por target; tools de leitura/replay (`list_requests`, `get_request_detail`, `replay_request`, `set_scope`, `search_bodies`) pendentes — Sprint 1 do plano.
 - ✅ **v2.0**: Workspaces (projects + targets), per-target storage, 7 MCP tools for management.
 
 Coming next (see PRD for full list):
