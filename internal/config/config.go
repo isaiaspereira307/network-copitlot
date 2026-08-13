@@ -12,6 +12,23 @@ type Config struct {
 	WorkspacePath string `yaml:"workspace_path"`
 	ActiveProject string `yaml:"active_project"`
 	ActiveTarget  string `yaml:"active_target"`
+	Proxy         Proxy  `yaml:"proxy"`
+}
+
+// Proxy define os limites de captura de body do proxy MITM (task 17):
+// globs de Content-Type que pulam a captura e cap de bytes do body capturado.
+type Proxy struct {
+	NoBodyContentTypes []string `yaml:"no_body_content_types"`
+	BodyCapBytes       int64    `yaml:"body_cap_bytes"`
+}
+
+// DefaultProxy retorna os defaults de captura: pula content-types binarios/
+// estaticos e cap de 1MB.
+func DefaultProxy() Proxy {
+	return Proxy{
+		NoBodyContentTypes: []string{"image/*", "font/*", "video/*", "text/css"},
+		BodyCapBytes:       1 << 20,
+	}
 }
 
 const dirName = ".mcp-proxy"
@@ -40,6 +57,7 @@ func Default() *Config {
 	home, _ := os.UserHomeDir()
 	return &Config{
 		WorkspacePath: filepath.Join(home, dirName, "workspace"),
+		Proxy:         DefaultProxy(),
 	}
 }
 

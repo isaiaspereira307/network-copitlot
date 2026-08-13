@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS requests (
   resp_headers TEXT,
   resp_body BLOB,
   resp_len INTEGER,
+  resp_skipped INTEGER NOT NULL DEFAULT 0,
+  resp_truncated INTEGER NOT NULL DEFAULT 0,
   ttfb_ms INTEGER,
   tags TEXT,
   notes TEXT

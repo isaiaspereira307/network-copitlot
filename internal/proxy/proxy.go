@@ -10,10 +10,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/elazarl/goproxy"
+	"github.com/isaias/network-copitlot/internal/config"
 	"github.com/isaias/network-copitlot/internal/projects"
 	"github.com/isaias/network-copitlot/internal/store"
 )
@@ -52,12 +55,34 @@ type Proxy struct {
 	server         *http.Server
 	ln             net.Listener
 	strictUpstream bool // false = InsecureSkipVerify no upstream (default pentest)
+
+	// captura de body (task 17): globs de Content-Type que pulam a captura e
+	// cap de bytes. Defaults em NewProxy; overridable via SetCaptureConfig.
+	noBodyContentTypes []string
+	bodyCapBytes       int64
 }
 
 // NewProxy cria um Proxy. caDir e onde EnsureCA persiste/le o CA.
 // O proxy so escuta apos Start().
 func NewProxy(s store.Store, caDir string) *Proxy {
-	return &Proxy{store: s, caDir: caDir, logger: log.Default()}
+	d := config.DefaultProxy()
+	return &Proxy{
+		store:              s,
+		caDir:              caDir,
+		logger:             log.Default(),
+		noBodyContentTypes: d.NoBodyContentTypes,
+		bodyCapBytes:       d.BodyCapBytes,
+	}
+}
+
+// SetCaptureConfig define os limites de captura de body (task 17): lista de
+// globs de Content-Type cujo body nao e capturado e cap de bytes. Lista vazia
+// = captura tudo; cap <= 0 = sem cap. Seguro para chamar de qualquer goroutine.
+func (p *Proxy) SetCaptureConfig(cfg config.Proxy) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.noBodyContentTypes = cfg.NoBodyContentTypes
+	p.bodyCapBytes = cfg.BodyCapBytes
 }
 
 // SetTarget atualiza o target ativo e refaz o escopo.
@@ -258,22 +283,72 @@ func (p *Proxy) onResponse(resp *http.Response, ctx *goproxy.ProxyCtx) *http.Res
 		ReqHeaders: cap.headers,
 	}
 	if cap.inScope {
-		var body []byte
+		var (
+			body      []byte
+			skipped   bool
+			truncated bool
+		)
 		if resp.Body != nil {
-			b, _ := io.ReadAll(resp.Body)
-			body = b
-			resp.Body = io.NopCloser(bytes.NewReader(b))
+			p.mu.Lock()
+			globs := p.noBodyContentTypes
+			capBytes := p.bodyCapBytes
+			p.mu.Unlock()
+			if matchesNoBodyContentType(resp.Header.Get("Content-Type"), globs) {
+				// pular: nao le o body; o fluxo original segue intacto p/ o cliente.
+				skipped = true
+			} else {
+				body, truncated = captureCapped(resp, capBytes)
+			}
 		}
 		rec.ReqBody = cap.body
 		rec.Status = resp.StatusCode
 		rec.RespHeaders = cloneHeaders(resp.Header)
 		rec.RespBody = body
 		rec.RespLen = len(body)
+		rec.RespBodySkipped = skipped
+		rec.RespBodyTruncated = truncated
 	}
 	if _, err := p.store.Insert(rec); err != nil {
 		p.logger.Printf("proxy.Insert: %v", err)
 	}
 	return resp
+}
+
+// matchesNoBodyContentType casa o Content-Type (sem parametros) contra os
+// globs configurados via path.Match (stdlib). Lista vazia = captura tudo.
+func matchesNoBodyContentType(ct string, globs []string) bool {
+	if i := strings.IndexByte(ct, ';'); i >= 0 {
+		ct = ct[:i]
+	}
+	ct = strings.TrimSpace(ct)
+	for _, g := range globs {
+		if ok, _ := path.Match(g, ct); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// captureCapped le ate capBytes+1 bytes da resposta e devolve no maximo
+// capBytes para armazenar (truncated=true se estourou). O passthrough para o
+// cliente e preservado: os bytes ja lidos sao re-emitidos via MultiReader,
+// seguidos do restante ainda nao consumido do body original. cap <= 0 = le
+// tudo (comportamento antigo).
+func captureCapped(resp *http.Response, capBytes int64) (stored []byte, truncated bool) {
+	if capBytes <= 0 {
+		b, _ := io.ReadAll(resp.Body)
+		resp.Body = io.NopCloser(bytes.NewReader(b))
+		return b, false
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, capBytes+1))
+	if int64(len(b)) > capBytes {
+		stored = b[:capBytes]
+		truncated = true
+	} else {
+		stored = b
+	}
+	resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(b), resp.Body))
+	return stored, truncated
 }
 
 func cloneHeaders(h http.Header) map[string][]string {

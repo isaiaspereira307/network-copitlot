@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/isaias/network-copitlot/internal/audit"
@@ -64,7 +65,11 @@ func runMCPServer(active *projects.ActiveState, repo *projects.Repo, al *audit.L
 // Requer projeto + alvo ativo; grava em
 // <workspace>/<projeto>/targets/<host>/requests.db.
 func newProxyCmd(active *projects.ActiveState, repo *projects.Repo, al *audit.Logger) *cobra.Command {
-	var addr string
+	var (
+		addr               string
+		bodyCap            int64
+		noBodyContentTypes string
+	)
 	c := &cobra.Command{
 		Use:   "proxy",
 		Short: "Sobe o proxy MITM HTTP/HTTPS standalone (default :8080)",
@@ -88,7 +93,26 @@ sem body (apenas metadados, conforme PRD §4.1). O CA esta em
 			}
 			defer st.Close()
 			caDir, _ := defaultCADir()
+			// captura de body (task 17): defaults de config.yaml; flags explicitas
+			// sobrescrevem.
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("carregar config: %w", err)
+			}
+			pcfg := cfg.Proxy
+			if cmd.Flags().Changed("body-cap") {
+				pcfg.BodyCapBytes = bodyCap
+			}
+			if cmd.Flags().Changed("no-body-content-types") {
+				pcfg.NoBodyContentTypes = nil
+				for _, g := range strings.Split(noBodyContentTypes, ",") {
+					if g = strings.TrimSpace(g); g != "" {
+						pcfg.NoBodyContentTypes = append(pcfg.NoBodyContentTypes, g)
+					}
+				}
+			}
 			p := proxy.NewProxy(st, caDir)
+			p.SetCaptureConfig(pcfg)
 			// recarga viva: MCP server (processo separado) persiste o scope no
 			// meta.yaml; o proxy observa o mtime e rele do disco a cada request.
 			metaPath := filepath.Join(tgt.Dir(proj.Dir(repo.WorkspacePath())), "meta.yaml")
@@ -118,6 +142,8 @@ sem body (apenas metadados, conforme PRD §4.1). O CA esta em
 		},
 	}
 	c.Flags().StringVar(&addr, "addr", ":8080", "endereco de escuta do proxy")
+	c.Flags().Int64Var(&bodyCap, "body-cap", 0, "cap de bytes do body capturado (0 = default 1048576)")
+	c.Flags().StringVar(&noBodyContentTypes, "no-body-content-types", "", "globs de Content-Type a pular na captura, separados por virgula (default image/*,font/*,video/*,text/css)")
 	return c
 }
 

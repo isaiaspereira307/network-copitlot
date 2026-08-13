@@ -33,6 +33,17 @@ func OpenSQLite(path string) (*SQLiteStore, error) {
 		db.Close()
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
+	// DBs criados antes de task 17 nao tem as colunas de skip/truncamento:
+	// ALTER idempotente (erro de coluna duplicada e ignorado).
+	for _, col := range []struct{ name, ddl string }{
+		{"resp_skipped", "INTEGER NOT NULL DEFAULT 0"},
+		{"resp_truncated", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if _, err := db.Exec("ALTER TABLE requests ADD COLUMN " + col.name + " " + col.ddl); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			db.Close()
+			return nil, fmt.Errorf("migrate column %s: %w", col.name, err)
+		}
+	}
 	return &SQLiteStore{db: db}, nil
 }
 
@@ -72,9 +83,9 @@ func (s *SQLiteStore) Insert(r *Request) (int64, error) {
 		return 0, err
 	}
 	res, err := s.db.Exec(`
-		INSERT INTO requests (ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, ttfb_ms, tags, notes)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, r.Ts, r.Method, r.URL, headersReq, r.ReqBody, r.Status, headersResp, r.RespBody, r.RespLen, r.TTFBms, tags, r.Notes)
+		INSERT INTO requests (ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, resp_skipped, resp_truncated, ttfb_ms, tags, notes)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, r.Ts, r.Method, r.URL, headersReq, r.ReqBody, r.Status, headersResp, r.RespBody, r.RespLen, r.RespBodySkipped, r.RespBodyTruncated, r.TTFBms, tags, r.Notes)
 	if err != nil {
 		return 0, err
 	}
@@ -82,7 +93,7 @@ func (s *SQLiteStore) Insert(r *Request) (int64, error) {
 }
 
 func (s *SQLiteStore) Get(id int64) (*Request, error) {
-	row := s.db.QueryRow(`SELECT id, ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, ttfb_ms, tags, notes FROM requests WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, resp_skipped, resp_truncated, ttfb_ms, tags, notes FROM requests WHERE id = ?`, id)
 	return scanRequest(row)
 }
 
@@ -137,7 +148,7 @@ func (s *SQLiteStore) List(f ListFilter) ([]*RequestSummary, error) {
 // All faz stream de todos os requests com corpos (req+resp). Filtros de List
 // nao se aplicam aqui; usado pelo scanner/export.
 func (s *SQLiteStore) All() ([]*Request, error) {
-	rows, err := s.db.Query(`SELECT id, ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, ttfb_ms, tags, notes FROM requests ORDER BY id DESC`)
+	rows, err := s.db.Query(`SELECT id, ts, method, url, req_headers, req_body, status, resp_headers, resp_body, resp_len, resp_skipped, resp_truncated, ttfb_ms, tags, notes FROM requests ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -345,15 +356,19 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanRequest(s scanner) (*Request, error) {
 	var (
-		r        Request
-		hReq     string
-		hResp    string
-		tagsJSON string
+		r         Request
+		hReq      string
+		hResp     string
+		tagsJSON  string
+		skipped   int
+		truncated int
 	)
-	err := s.Scan(&r.ID, &r.Ts, &r.Method, &r.URL, &hReq, &r.ReqBody, &r.Status, &hResp, &r.RespBody, &r.RespLen, &r.TTFBms, &tagsJSON, &r.Notes)
+	err := s.Scan(&r.ID, &r.Ts, &r.Method, &r.URL, &hReq, &r.ReqBody, &r.Status, &hResp, &r.RespBody, &r.RespLen, &skipped, &truncated, &r.TTFBms, &tagsJSON, &r.Notes)
 	if err != nil {
 		return nil, err
 	}
+	r.RespBodySkipped = skipped != 0
+	r.RespBodyTruncated = truncated != 0
 	if r.ReqHeaders, err = unmarshalJSON[map[string][]string](hReq); err != nil {
 		return nil, err
 	}

@@ -12,9 +12,12 @@ type Request struct {
 	RespHeaders map[string][]string
 	RespBody    []byte
 	RespLen     int
-	TTFBms      int
-	Tags        []string
-	Notes       string
+	// flags de captura (task 17): body pulado por content-type / truncado no cap.
+	RespBodySkipped   bool
+	RespBodyTruncated bool
+	TTFBms            int
+	Tags              []string
+	Notes             string
 }
 
 // ListFilter limita/filtra resultados. Zero = sem limite/filtro.
