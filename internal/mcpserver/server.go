@@ -109,7 +109,7 @@ func (s *Server) RegisterTools() {
 	)
 	s.mcp.AddTool(
 		mcp.NewTool("get_active_context",
-			mcp.WithDescription("Retorna projeto/alvo ativos e contagem de requests"),
+			mcp.WithDescription("Session briefing: active project/target, request count, status-code histogram, top 5 hosts, endpoint count, scope status. Call this FIRST at session start (<500 tokens)."),
 		),
 		s.wrapTool("get_active_context", s.toolGetActiveContext),
 	)

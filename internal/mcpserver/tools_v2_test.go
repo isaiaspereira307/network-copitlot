@@ -276,6 +276,37 @@ func TestGetActiveContextTool_Full(t *testing.T) {
 	}
 }
 
+func TestToolGetActiveContext_Briefing(t *testing.T) {
+	s, _ := newTestServer(t)
+	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})
+	_, _ = callTool(t, s, "set_active_project", map[string]any{"name": "P"})
+	_, _ = callTool(t, s, "add_target", map[string]any{"host": "a.com", "confirmed": true})
+	_, _ = callTool(t, s, "set_active_target", map[string]any{"host": "a.com"})
+	st, err := s.openStoreForActiveTarget()
+	if err != nil || st == nil {
+		t.Fatalf("open store: %v nil=%v", err, st == nil)
+	}
+	for i := 0; i < 3; i++ {
+		req := &store.Request{Method: "GET", URL: "https://a.com/x", Status: 200}
+		if i == 2 {
+			req.URL = "https://b.com/y"
+			req.Status = 500
+		}
+		if _, err := st.Insert(req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := s.toolGetActiveContext(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"status_counts"`, `"200":2`, `"500":1`, `"top_hosts"`, `"a.com"`, `"endpoints"`, `"scope_defined"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("briefing missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestListRequestsTool_ReturnsOnlySummary(t *testing.T) {
 	s, _ := newTestServer(t)
 	_, _ = callTool(t, s, "create_project", map[string]any{"name": "P", "type": "bugbounty"})

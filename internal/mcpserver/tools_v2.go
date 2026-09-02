@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"sort"
 	"time"
 	"unicode/utf8"
 
@@ -116,6 +117,10 @@ func (s *Server) toolGetActiveContext(ctx context.Context, args map[string]any) 
 		"active_project": "",
 		"active_target":  "",
 		"request_count":  0,
+		"status_counts":  map[int]int{},
+		"top_hosts":      []map[string]any{},
+		"endpoints":      0,
+		"scope_defined":  false,
 	}
 	if proj != nil {
 		out["active_project"] = proj.Name
@@ -123,10 +128,45 @@ func (s *Server) toolGetActiveContext(ctx context.Context, args map[string]any) 
 	}
 	if tgt != nil {
 		out["active_target"] = tgt.Host
+		out["scope_defined"] = len(tgt.InScopePatterns) > 0
 		st, err := s.openStoreForActiveTarget()
 		if err == nil && st != nil {
 			n, _ := st.Count()
 			out["request_count"] = n
+			sums, err := st.List(store.ListFilter{Limit: 100000}) // ponytail: scan em memoria, SQL GROUP BY se >50k requests
+			if err == nil {
+				statusCounts := map[int]int{}
+				hostCounts := map[string]int{}
+				for _, r := range sums {
+					statusCounts[r.Status]++
+					if u, e := url.Parse(r.URL); e == nil && u.Host != "" {
+						hostCounts[u.Host]++
+					}
+				}
+				out["status_counts"] = statusCounts
+				// top 5 hosts por count desc (sort estavel por host p/ determinismo)
+				hosts := make([]string, 0, len(hostCounts))
+				for h := range hostCounts {
+					hosts = append(hosts, h)
+				}
+				sort.Slice(hosts, func(i, j int) bool {
+					if hostCounts[hosts[i]] != hostCounts[hosts[j]] {
+						return hostCounts[hosts[i]] > hostCounts[hosts[j]]
+					}
+					return hosts[i] < hosts[j]
+				})
+				if len(hosts) > 5 {
+					hosts = hosts[:5]
+				}
+				top := make([]map[string]any, 0, len(hosts))
+				for _, h := range hosts {
+					top = append(top, map[string]any{"host": h, "count": hostCounts[h]})
+				}
+				out["top_hosts"] = top
+			}
+			if eps, err := st.ListEndpoints(); err == nil {
+				out["endpoints"] = len(eps)
+			}
 		}
 	}
 	b, _ := json.Marshal(out)
