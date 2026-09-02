@@ -7,7 +7,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-purple)](https://modelcontextprotocol.io)
 [![Platform: Linux/macOS/Windows](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)]()
 
-A native-MCP interception proxy. Point your browser at it, browse your authorized target, and an AI assistant (Claude) manages projects/targets over MCP; reading and replaying captured transactions lands in Sprint 1.
+A native-MCP interception proxy. Point your browser at it, browse your authorized target, and an AI assistant (Claude) reads, searches, replays, fuzzes, and rewrites captured transactions over MCP — 18 tools, no GUI.
 
 ```
   browser ─── HTTP/HTTPS ──▶  mcp-proxy  ──── upstream
@@ -24,7 +24,7 @@ A native-MCP interception proxy. Point your browser at it, browse your authorize
 
 - **Real MITM** for HTTP and HTTPS (auto-generated CA, one-time install).
 - **Per-target storage** — separate SQLite for every host you add.
-- **MCP tools** to manage projects/targets (list/inspect/replay of transactions lands in Sprint 1).
+- **MCP tools** to manage projects/targets, list/inspect/search/replay transactions, map endpoints, diff & summarize responses, fuzz (intruder-lite), and live match/replace.
 - **Hard scope guard** — out-of-scope traffic is logged without bodies.
 - **Zero CGO, zero runtime deps** — single static binary.
 - **Audit log** with automatic redaction of secrets (`password`, `token`, `api_key`, etc).
@@ -133,21 +133,27 @@ Add `mcp-proxy` to your MCP client config (Claude Desktop example):
 
 Restart Claude Desktop. You now have access to these tools:
 
-| Tool                  | What it does                                |
-|-----------------------|---------------------------------------------|
-| `create_project`      | Create a new engagement                     |
-| `list_projects`       | List all engagements                        |
-| `set_active_project`  | Switch the active project                   |
-| `add_target`          | Add a target (requires `confirmed: true`)   |
-| `list_targets`        | List targets in the active project          |
-| `set_active_target`   | Switch the active target                    |
-| `get_active_context`  | Show current project, target, request count |
+| Tool                  | What it does                                            |
+|-----------------------|---------------------------------------------------------|
+| `create_project` / `list_projects` / `set_active_project` | Manage engagements          |
+| `add_target` / `list_targets` / `set_active_target`       | Manage targets (`confirmed: true` required) |
+| `set_scope`           | Persist in-scope patterns (proxy reloads live)          |
+| `get_active_context`  | Show current project, target, request count             |
+| `list_requests`       | Paginate captured requests (summaries, no bodies)       |
+| `get_request_detail`  | Full request/response (bodies truncated + paged)        |
+| `search_bodies`       | Regex/substring search across req/resp bodies           |
+| `list_endpoints`      | Deduplicated endpoint map (`/users/{id}`)               |
+| `summarize_response`  | Per-content-type summary (HTML forms, JSON keys, JS endpoints/tokens) |
+| `diff_requests`       | Compact unified diff of two requests                    |
+| `replay_request`      | Re-send with url/method/header/body overrides           |
+| `fuzz_request`        | Intruder-lite: inject payloads at a point, flag anomalies |
+| `set_match_replace` / `list_match_replace` | Live in-flight request rewriting   |
 
 Then in Claude:
 
 > *"What's the current project and target?"*
 
-Claude calls `get_active_context`, which returns the active project, target, and stored request count. Reading and replaying individual transactions (`list_requests`, `get_request_detail`, `replay_request`, `search_bodies`) is not shipped yet — it lands in Sprint 1 of the current plan (see Roadmap below).
+Claude calls `get_active_context`. From there you can list, search, diff, replay, and fuzz captured traffic entirely from the chat — see [docs/COMMANDS.md](docs/COMMANDS.md) for every tool and worked bug-bounty flows.
 
 ---
 
@@ -171,7 +177,7 @@ Claude calls `get_active_context`, which returns the active project, target, and
                             │  └────────┘  │
                             │              │
                             │  ┌────────┐  │
-                            │  │  MCP   │──┼── management tools; list/replay in Sprint 1
+                            │  │  MCP   │──┼── 18 tools: read/search/diff/replay/fuzz/rewrite
                             │  └────────┘  │
                             └──────────────┘
 ```
@@ -258,13 +264,14 @@ Read [docs/proxy.md](docs/proxy.md) for the threat model and the full PRD lives 
 
 This is **v2.x** of the project. Done so far:
 
-- ⚠️ **v1 (parcial)**: proxy MITM + CA + storage por target; tools de leitura/replay (`list_requests`, `get_request_detail`, `replay_request`, `set_scope`, `search_bodies`) pendentes — Sprint 1 do plano.
-- ✅ **v2.0**: Workspaces (projects + targets), per-target storage, 7 MCP tools for management.
+- ✅ **v1**: proxy MITM + CA + per-target storage + hard scope guard.
+- ✅ **v2.0**: Workspaces (projects + targets), per-target storage, management MCP tools.
+- ✅ **v2.1**: Read/replay tools (`list_requests`, `get_request_detail`, `search_bodies`, `replay_request`, `set_scope`), endpoint map, response diff & summarize.
+- ✅ **v2.2**: Live match/replace (`set_match_replace`) and intruder-lite fuzzing (`fuzz_request`) — 18 MCP tools total.
 
 Coming next (see PRD for full list):
 
-- 🔜 **v2.1** — Match & Replace on-the-fly, custom request editor.
-- 🔜 **v3** — Intruder fuzzing engine, macro/session handling.
+- 🔜 **v3** — Macro/session handling, custom request editor, fuzz wordlists.
 - 🔜 **v4** — Passive scanner (reflected XSS, IDOR, SQLi, SSRF, secrets in JS) + sitemap.
 - 🔜 **v5** — Decoder, comparer, extensions API (Go plugins).
 

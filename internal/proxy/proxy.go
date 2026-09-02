@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -252,14 +253,26 @@ func (p *Proxy) onRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Reque
 	p.mu.Lock()
 	p.refreshScopeLocked()
 	scp := p.scope
+	var rules []projects.MatchReplaceRule
+	if p.target != nil {
+		rules = p.target.MatchReplaceRules
+	}
 	p.mu.Unlock()
+
+	inScope := scp != nil && scp.Matches(req.URL)
+	// Match/replace vivo: so trafego in-scope e reescrito, antes de capturar,
+	// para que o request armazenado reflita exatamente o que o upstream viu.
+	if inScope && len(rules) > 0 {
+		applyMatchReplace(req, rules, func(u *url.URL) bool { return scp.Matches(u) }, p.logger)
+		inScope = scp.Matches(req.URL) // re-check: rewrite de url pode mudar host
+	}
 
 	cap := &captured{
 		method:  req.Method,
 		url:     req.URL.String(),
 		headers: cloneHeaders(req.Header),
 	}
-	if scp != nil && scp.Matches(req.URL) {
+	if inScope {
 		cap.inScope = true
 		if req.Body != nil {
 			b, _ := io.ReadAll(req.Body)

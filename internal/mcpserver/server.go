@@ -35,6 +35,7 @@ func New(active *projects.ActiveState, repo *projects.Repo, a *audit.Logger) *Se
 func (s *Server) RegisterTools() {
 	registerV2Tools(s)
 	registerV3Tools(s)
+	registerV4Tools(s)
 	if s.mcp.GetTool("create_project") != nil {
 		return // ja registradas
 	}
@@ -162,6 +163,31 @@ func (s *Server) RegisterTools() {
 			mcp.WithNumber("id", mcp.Required()),
 		),
 		s.wrapTool("summarize_response", s.toolSummarizeResponse),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("fuzz_request",
+			mcp.WithDescription("Intruder-style fuzzing: take one captured request (id from list_requests) and replay it once per payload, injecting each payload at a chosen point, always under the active target's scope guard. point selects where to inject: 'marker' (replace every occurrence of `marker`, default FUZZ, across url+body+header values), 'body' (whole body), 'url' (whole url), 'query:<param>' (set that query param), or 'header:<name>' (set that header). Supply values via payloads (string array) and/or payload_set (builtin: xss, sqli, traversal, redirect); capped at 100 payloads. Each replay is persisted as a new request; the tool returns a compact table — payload, status, resp_len, reflected (payload echoed in the response body), new_id, anomaly — never full bodies. Rows flagged anomaly (status changed vs baseline, size changed >20%, or reflected) sort first; the list is truncated for token frugality (truncated=true). Follow anomalies with get_request_detail on new_id. Out-of-scope hosts are blocked per payload."),
+			mcp.WithNumber("id", mcp.Required()),
+			mcp.WithString("point", mcp.Required()),
+			mcp.WithArray("payloads", mcp.WithStringItems()),
+			mcp.WithString("payload_set", mcp.Enum("xss", "sqli", "traversal", "redirect")),
+			mcp.WithString("marker"),
+			mcp.WithBoolean("follow_redirects"),
+		),
+		s.wrapTool("fuzz_request", s.toolFuzzRequest),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("set_match_replace",
+			mcp.WithDescription("Persist live match/replace rules for the ACTIVE target (replaces the whole rule list; pass an empty array to clear). The running proxy applies enabled rules to every in-scope request before forwarding, picking up changes live via an mtime check of meta.yaml — no restart. Each rule: part (url | req_header | req_body), match (RE2 regex), replace (supports $1/${name}), header (required when part=req_header), name (optional label), enabled (default true). Rules are validated (part valid, regex compiles) before saving. A url rule whose rewrite would move the host out of scope is skipped at runtime — match/replace never leaks traffic off the authorized target."),
+			mcp.WithArray("rules", mcp.Required()),
+		),
+		s.wrapTool("set_match_replace", s.toolSetMatchReplace),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("list_match_replace",
+			mcp.WithDescription("List the persisted live match/replace rules of the active target (reloaded from disk)."),
+		),
+		s.wrapTool("list_match_replace", s.toolListMatchReplace),
 	)
 }
 

@@ -178,6 +178,18 @@ func (r *Repo) SetScope(projectName, host string, inScope, outOfScope []string) 
 	return r.UpdateTarget(projectName, t)
 }
 
+// SetMatchReplace persiste as regras de match/replace do alvo (substitui a
+// lista inteira). UpdateTarget valida cada regra antes de gravar; o proxy
+// recarrega vivo via mtime do meta.yaml.
+func (r *Repo) SetMatchReplace(projectName, host string, rules []MatchReplaceRule) error {
+	t, err := r.LoadTarget(projectName, host)
+	if err != nil {
+		return err
+	}
+	t.MatchReplaceRules = rules
+	return r.UpdateTarget(projectName, t)
+}
+
 func (r *Repo) ListTargets(projectName string) ([]*Target, error) {
 	base := filepath.Join(r.projectDir(projectName), "targets")
 	entries, err := os.ReadDir(base)
