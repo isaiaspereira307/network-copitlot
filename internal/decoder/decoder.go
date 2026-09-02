@@ -5,6 +5,8 @@ package decoder
 import (
 	"bytes"
 	"compress/gzip"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -177,6 +179,29 @@ func b64url(s string) (string, error) {
 		}
 	}
 	return string(b), nil
+}
+
+// ResignJWT re-assina um JWT offline para acceptance testing: alg=none troca o
+// header (alg:none, sem assinatura, token termina com '.'); hs256 assina com
+// HMAC-SHA256(secret, header.payload). Payload original preservado.
+func ResignJWT(token, alg, secret string) (string, error) {
+	parts := strings.Split(strings.TrimSpace(token), ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("jwt invalido")
+	}
+	switch strings.ToLower(alg) {
+	case "none":
+		hdr := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"none","typ":"JWT"}`))
+		return hdr + "." + parts[1] + ".", nil
+	case "hs256":
+		hdr := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
+		signing := hdr + "." + parts[1]
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write([]byte(signing))
+		return signing + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+	default:
+		return "", fmt.Errorf("alg %q nao suportado: use none ou hs256", alg)
+	}
 }
 
 func encodeJWTPayload(input string) string {

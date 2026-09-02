@@ -440,6 +440,16 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("jwt_decode", s.toolJwtDecode),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("jwt_resign",
+			mcp.WithDescription("Re-sign a JWT offline for acceptance testing (alg=none drops the signature; hs256 signs with the supplied secret). No traffic is sent to any target. Requires confirmed=true."),
+			mcp.WithString("token", mcp.Required()),
+			mcp.WithString("alg", mcp.Required(), mcp.Enum("none", "hs256")),
+			mcp.WithString("secret"),
+			mcp.WithBoolean("confirmed", mcp.Required()),
+		),
+		s.wrapTool("jwt_resign", s.toolJwtResign),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.

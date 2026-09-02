@@ -151,3 +151,22 @@ func TestToolJwtDecode_MissingToken(t *testing.T) {
 		t.Error("esperava erro sem token")
 	}
 }
+
+func TestToolJwtResign(t *testing.T) {
+	s, _ := newTestServer(t)
+	tok := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MSJ9.c2ln"
+	// sem confirmed=true -> erro
+	_, err := callTool(t, s, "jwt_resign", map[string]any{"token": tok, "alg": "none"})
+	if err == nil || !strings.Contains(err.Error(), "confirmed=true obrigatorio") {
+		t.Errorf("esperava erro confirmed=true obrigatorio, got %v", err)
+	}
+	// com confirmed=true -> token re-assinado
+	out, err := callTool(t, s, "jwt_resign", map[string]any{"token": tok, "alg": "hs256", "secret": "s3cr3t", "confirmed": true})
+	if err != nil {
+		t.Fatalf("jwt_resign: %v", err)
+	}
+	parts := strings.Split(out, ".")
+	if len(parts) != 3 || parts[2] == "" {
+		t.Errorf("out = %q, want token com 3 partes assinadas", out)
+	}
+}

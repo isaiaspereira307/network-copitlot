@@ -1,6 +1,9 @@
 package decoder
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"slices"
 	"strings"
 	"testing"
@@ -95,5 +98,41 @@ func TestDecodeJWTFull(t *testing.T) {
 	// token invalido
 	if _, err := DecodeJWTFull("nao-e-jwt"); err == nil {
 		t.Error("esperava erro para token invalido")
+	}
+}
+
+func TestResignJWT_None(t *testing.T) {
+	tok := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MSJ9.c2ln"
+	out, err := ResignJWT(tok, "none", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(out, ".")
+	if len(parts) != 3 || parts[2] != "" {
+		t.Errorf("out = %q, want 3 partes com sig vazia", out)
+	}
+	hdr, _ := b64url(parts[0])
+	if !strings.Contains(hdr, `"none"`) {
+		t.Errorf("header = %s, want alg none", hdr)
+	}
+}
+
+func TestResignJWT_HS256(t *testing.T) {
+	tok := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MSJ9.c2ln"
+	out, err := ResignJWT(tok, "hs256", "s3cr3t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.Split(out, ".")
+	if len(parts) != 3 || parts[2] == "" {
+		t.Fatalf("out = %q, want 3 partes assinadas", out)
+	}
+	mac := hmac.New(sha256.New, []byte("s3cr3t"))
+	mac.Write([]byte(parts[0] + "." + parts[1]))
+	if want := base64.RawURLEncoding.EncodeToString(mac.Sum(nil)); parts[2] != want {
+		t.Errorf("sig = %s, want %s", parts[2], want)
+	}
+	if _, err := ResignJWT(tok, "rs256", "x"); err == nil {
+		t.Error("esperava erro para alg nao suportado")
 	}
 }

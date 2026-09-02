@@ -15,7 +15,7 @@ func registerV10Tools(s *Server) {
 	s.tools["export_curl"] = s.toolExportCurl
 	s.tools["export_har"] = s.toolExportHAR
 	s.tools["jwt_decode"] = s.toolJwtDecode
-	// Tasks 4: jwt_resign
+	s.tools["jwt_resign"] = s.toolJwtResign
 }
 
 // toolExportCurl reconstrói um request capturado como comando curl pronto.
@@ -93,4 +93,25 @@ func (s *Server) toolJwtDecode(ctx context.Context, args map[string]any) (string
 		return "", err
 	}
 	return string(raw), nil
+}
+
+// toolJwtResign re-assina um JWT offline (none/hs256) para acceptance
+// testing. Nao envia trafego. Requer confirmed=true (padrao add_target).
+func (s *Server) toolJwtResign(ctx context.Context, args map[string]any) (string, error) {
+	if confirmed, _ := args["confirmed"].(bool); !confirmed {
+		return "", fmt.Errorf("confirmed=true obrigatorio")
+	}
+	token := argStr(args, "token")
+	if token == "" {
+		return "", fmt.Errorf("token obrigatorio")
+	}
+	alg := argStr(args, "alg")
+	if alg == "" {
+		return "", fmt.Errorf("alg obrigatorio: none ou hs256")
+	}
+	out, err := decoder.ResignJWT(token, alg, argStr(args, "secret"))
+	if err != nil {
+		return "", err
+	}
+	return out, nil
 }
