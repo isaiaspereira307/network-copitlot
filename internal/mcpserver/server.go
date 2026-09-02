@@ -427,6 +427,12 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("export_curl", s.toolExportCurl),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("export_har",
+			mcp.WithDescription("Export the entire active target as HAR 1.2 — metadata only (method, URL, headers, statuses, sizes), no bodies. Import into other tools (Burp, devtools). Returns the file path."),
+		),
+		s.wrapTool("export_har", s.toolExportHAR),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.

@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -41,6 +42,47 @@ func TestToolExportCurl(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("curl output missing %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestToolExportHAR(t *testing.T) {
+	s, _ := newTestServer(t)
+	st := setupExportTarget(t, s)
+	for i := 0; i < 2; i++ {
+		if _, err := st.Insert(&store.Request{
+			Method: "GET", URL: "https://api.alvo.com/r", Status: 200, RespLen: 42,
+			ReqBody: []byte(`{"segredo":"nao-exportar"}`),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := s.toolExportHAR(context.Background(), map[string]any{})
+	if err != nil {
+		t.Fatalf("toolExportHAR: %v", err)
+	}
+	if !strings.Contains(out, ".har") {
+		t.Errorf("esperava caminho .har na saida: %s", out)
+	}
+	path := s.reportPath(".har")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ler HAR %s: %v", path, err)
+	}
+	if !strings.Contains(string(raw), `"1.2"`) {
+		t.Errorf("HAR sem version 1.2:\n%s", raw)
+	}
+	if strings.Contains(string(raw), "segredo") || strings.Contains(string(raw), `"postData"`) {
+		t.Error("HAR contem corpo de request (deve ser metadata only)")
+	}
+	if !strings.Contains(string(raw), `"entries"`) {
+		t.Errorf("HAR sem entries:\n%s", raw)
+	}
+}
+
+func TestToolExportHAR_NoActiveTarget(t *testing.T) {
+	s, _ := newTestServer(t)
+	if _, err := s.toolExportHAR(context.Background(), map[string]any{}); err == nil {
+		t.Error("esperava erro sem alvo ativo")
 	}
 }
 
