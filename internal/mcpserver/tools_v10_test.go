@@ -130,3 +130,24 @@ func TestToolExportCurl_HeredocLargeBody(t *testing.T) {
 		t.Error("corpo grande ausente na saida")
 	}
 }
+
+func TestToolJwtDecode(t *testing.T) {
+	s, _ := newTestServer(t)
+	tok := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MSIsImV4cCI6MTAwMDAwMDAwMH0.sig"
+	out, err := callTool(t, s, "jwt_decode", map[string]any{"token": tok})
+	if err != nil {
+		t.Fatalf("jwt_decode: %v", err)
+	}
+	for _, want := range []string{`"warnings"`, `"header"`, `"payload"`, "exp expirado"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("saida jwt_decode sem %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestToolJwtDecode_MissingToken(t *testing.T) {
+	s, _ := newTestServer(t)
+	if _, err := callTool(t, s, "jwt_decode", map[string]any{}); err == nil {
+		t.Error("esperava erro sem token")
+	}
+}

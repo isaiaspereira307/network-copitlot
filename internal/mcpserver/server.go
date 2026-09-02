@@ -433,6 +433,13 @@ func (s *Server) RegisterTools() {
 		),
 		s.wrapTool("export_har", s.toolExportHAR),
 	)
+	s.mcp.AddTool(
+		mcp.NewTool("jwt_decode",
+			mcp.WithDescription("Decode a JWT (JWS compact serialization). Returns header, payload, signature and attack-surface warnings: alg=none, empty signature, expired exp. Does not verify the signature."),
+			mcp.WithString("token", mcp.Required()),
+		),
+		s.wrapTool("jwt_decode", s.toolJwtDecode),
+	)
 }
 
 // wrapTool adapta toolFunc (ctx, map[string]any) para ToolHandlerFunc do mcp-go.

@@ -2,17 +2,20 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
+	"github.com/isaiaspereira307/network-copitlot/internal/decoder"
 	"github.com/isaiaspereira307/network-copitlot/internal/har"
 )
 
 func registerV10Tools(s *Server) {
 	s.tools["export_curl"] = s.toolExportCurl
 	s.tools["export_har"] = s.toolExportHAR
-	// Tasks 3-4: jwt_decode, jwt_resign
+	s.tools["jwt_decode"] = s.toolJwtDecode
+	// Tasks 4: jwt_resign
 }
 
 // toolExportCurl reconstrói um request capturado como comando curl pronto.
@@ -72,4 +75,22 @@ func (s *Server) toolExportHAR(ctx context.Context, args map[string]any) (string
 		return "", err
 	}
 	return fmt.Sprintf("HAR exportado em %s (%d entries, metadata only)", path, len(reqs)), nil
+}
+
+// toolJwtDecode decodifica um JWT completo (header+payload+sig) com warnings
+// de superficie de ataque. Nao verifica assinatura (decode, nao verify).
+func (s *Server) toolJwtDecode(ctx context.Context, args map[string]any) (string, error) {
+	token := argStr(args, "token")
+	if token == "" {
+		return "", fmt.Errorf("token obrigatorio")
+	}
+	info, err := decoder.DecodeJWTFull(token)
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(info)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
 }

@@ -1,6 +1,7 @@
 package decoder
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -66,5 +67,33 @@ func TestDecodeGzip(t *testing.T) {
 	dec, err := Decode("gzip", enc)
 	if err != nil || dec != "dados comprimidos" {
 		t.Fatalf("gzip roundtrip: got %q err %v", dec, err)
+	}
+}
+
+func TestDecodeJWTFull(t *testing.T) {
+	// header {"alg":"HS256","typ":"JWT"}, payload {"sub":"u1","exp":1000000000} (expirado)
+	tok := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MSIsImV4cCI6MTAwMDAwMDAwMH0.sig"
+	info, err := DecodeJWTFull(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(info.Header, "HS256") || !strings.Contains(info.Payload, `"sub":"u1"`) {
+		t.Errorf("header=%s payload=%s", info.Header, info.Payload)
+	}
+	if !slices.Contains(info.Warnings, "exp expirado") {
+		t.Errorf("warnings = %v, want exp expirado", info.Warnings)
+	}
+	// alg=none
+	noneTok := "eyJhbGciOiJub25lIn0.eyJzdWIiOiJ1MSJ9."
+	info2, err := DecodeJWTFull(noneTok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(info2.Warnings, "alg=none") || !slices.Contains(info2.Warnings, "assinatura vazia") {
+		t.Errorf("warnings = %v, want alg=none e assinatura vazia", info2.Warnings)
+	}
+	// token invalido
+	if _, err := DecodeJWTFull("nao-e-jwt"); err == nil {
+		t.Error("esperava erro para token invalido")
 	}
 }

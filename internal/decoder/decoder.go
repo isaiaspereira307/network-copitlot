@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Formats suportados por Decode/Encode.
@@ -112,6 +113,70 @@ func decodeJWT(token string) (string, error) {
 		return pretty.String(), nil
 	}
 	return string(raw), nil
+}
+
+// JWTInfo e o resultado completo do decode de um JWT (header, payload,
+// assinatura e warnings de superficie de ataque).
+type JWTInfo struct {
+	Header    string   `json:"header"`
+	Payload   string   `json:"payload"`
+	Signature string   `json:"signature"`
+	Warnings  []string `json:"warnings"`
+}
+
+// DecodeJWTFull decodifica header+payload de um JWT (JWS compact) e devolve
+// warnings de ataque: alg=none, assinatura vazia, exp expirado.
+func DecodeJWTFull(token string) (*JWTInfo, error) {
+	parts := strings.Split(strings.TrimSpace(token), ".")
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("jwt invalido: esperado header.payload[.sig]")
+	}
+	header, err := b64url(parts[0])
+	if err != nil {
+		return nil, fmt.Errorf("header: %w", err)
+	}
+	payload, err := b64url(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("payload: %w", err)
+	}
+	sig := ""
+	if len(parts) > 2 {
+		if b, err := base64.RawURLEncoding.DecodeString(parts[2]); err == nil {
+			sig = string(b)
+		} else {
+			sig = parts[2] // opaque
+		}
+	}
+	info := &JWTInfo{Header: header, Payload: payload, Signature: sig}
+	var hdr struct {
+		Alg string `json:"alg"`
+	}
+	_ = json.Unmarshal([]byte(header), &hdr) // best-effort
+	if strings.EqualFold(hdr.Alg, "none") {
+		info.Warnings = append(info.Warnings, "alg=none")
+	}
+	if len(parts) < 3 || parts[2] == "" {
+		info.Warnings = append(info.Warnings, "assinatura vazia")
+	}
+	var pl struct {
+		Exp int64 `json:"exp"`
+	}
+	if err := json.Unmarshal([]byte(payload), &pl); err == nil && pl.Exp > 0 && pl.Exp < time.Now().Unix() {
+		info.Warnings = append(info.Warnings, "exp expirado")
+	}
+	return info, nil
+}
+
+// b64url decodifica base64url com ou sem padding (mesma tolerancia de decodeJWT).
+func b64url(s string) (string, error) {
+	b, err := base64.RawURLEncoding.DecodeString(strings.TrimSuffix(s, "="))
+	if err != nil {
+		b, err = base64.URLEncoding.DecodeString(withPadding(s))
+		if err != nil {
+			return "", err
+		}
+	}
+	return string(b), nil
 }
 
 func encodeJWTPayload(input string) string {
