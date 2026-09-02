@@ -57,6 +57,7 @@ func (s *Server) RegisterTools() {
 	registerV7Tools(s)
 	registerV8Tools(s)
 	registerV9Tools(s)
+	registerV10Tools(s)
 	if s.mcp.GetTool("create_project") != nil {
 		return // ja registradas
 	}
@@ -418,6 +419,13 @@ func (s *Server) RegisterTools() {
 			mcp.WithString("status_filter", mcp.Enum("open", "triaged", "confirmed", "false-positive", "closed")),
 		),
 		s.wrapTool("report_export_pdf", s.toolReportPDF),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("export_curl",
+			mcp.WithDescription("Rebuild a captured request as a ready-to-paste curl command. Pass a request id from list_requests. Returns the exact one-liner (or heredoc form for large bodies) with method, URL, headers and body."),
+			mcp.WithNumber("id", mcp.Required()),
+		),
+		s.wrapTool("export_curl", s.toolExportCurl),
 	)
 }
 
