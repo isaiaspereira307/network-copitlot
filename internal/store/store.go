@@ -113,4 +113,17 @@ type Store interface {
 	All() ([]*Request, error)
 	Count() (int, error)
 	Close() error
+
+	// Findings (v4.0/v5.1).
+	EnsureFindingsSchema() error
+	AddFinding(f *Finding) (int64, error)
+	ListFindings(typeFilter, severity string) ([]*Finding, error)
+	GetFinding(id int64) (*Finding, error)
+	SetFindingStatus(id int64, status FindingStatus) error
+	AddFindingNote(id int64, note string) error
+
+	// Meta (v5.0 Logger++): tags/comments custom em requests.
+	SetRequestTags(id int64, tags []string) error
+	AddRequestNote(id int64, note string) error
+	ListTags() ([]string, error)
 }

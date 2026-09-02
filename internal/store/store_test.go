@@ -20,6 +20,15 @@ func (s *stubStore) Replay(int64, ReplayOverrides, func(string) bool) (*ReplayRe
 func (s *stubStore) ListEndpoints() ([]*Endpoint, error)              { return nil, nil }
 func (s *stubStore) DiffRequests(int64, int64, string) (*Diff, error) { return nil, nil }
 func (s *stubStore) All() ([]*Request, error)                         { return nil, nil }
+func (s *stubStore) EnsureFindingsSchema() error                       { return nil }
+func (s *stubStore) AddFinding(*Finding) (int64, error)                { return 0, nil }
+func (s *stubStore) ListFindings(string, string) ([]*Finding, error)   { return nil, nil }
+func (s *stubStore) GetFinding(int64) (*Finding, error)                { return nil, nil }
+func (s *stubStore) SetFindingStatus(int64, FindingStatus) error       { return nil }
+func (s *stubStore) AddFindingNote(int64, string) error                { return nil }
+func (s *stubStore) SetRequestTags(int64, []string) error              { return nil }
+func (s *stubStore) AddRequestNote(int64, string) error                { return nil }
+func (s *stubStore) ListTags() ([]string, error)                       { return nil, nil }
 
 func TestStoreInterface_Compiles(t *testing.T) {
 	var _ Store = (*stubStore)(nil)

@@ -7,6 +7,9 @@ import (
 	"sync"
 
 	"github.com/isaiaspereira307/network-copitlot/internal/audit"
+	"github.com/isaiaspereira307/network-copitlot/internal/extensions"
+	"github.com/isaiaspereira307/network-copitlot/internal/intruder"
+	"github.com/isaiaspereira307/network-copitlot/internal/macro"
 	"github.com/isaiaspereira307/network-copitlot/internal/projects"
 	"github.com/isaiaspereira307/network-copitlot/internal/store"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -22,11 +25,24 @@ type Server struct {
 	currentStore store.Store
 	mu           sync.Mutex // guards currentStore
 	tools        map[string]toolFunc
+
+	// v3.0 engines (lazy-initialized on first use).
+	engine   *intruder.Engine
+	macros   *macro.Manager
+	engInit  sync.Once
+	macInit  sync.Once
+
+	// v4.0 scanner jobs.
+	scanMu  sync.Mutex
+	scans   map[string]*scanJob
+
+	// v5.0 extensions.
+	extMgr  *extensions.Manager
 }
 
 func New(active *projects.ActiveState, repo *projects.Repo, a *audit.Logger) *Server {
 	m := mcpsdk.NewMCPServer("mcp-proxy", "v0.2.0")
-	s := &Server{active: active, repo: repo, audit: a, mcp: m, tools: map[string]toolFunc{}}
+	s := &Server{active: active, repo: repo, audit: a, mcp: m, tools: map[string]toolFunc{}, scans: map[string]*scanJob{}}
 	s.RegisterTools()
 	return s
 }
@@ -36,6 +52,11 @@ func (s *Server) RegisterTools() {
 	registerV2Tools(s)
 	registerV3Tools(s)
 	registerV4Tools(s)
+	registerV5Tools(s)
+	registerV6Tools(s)
+	registerV7Tools(s)
+	registerV8Tools(s)
+	registerV9Tools(s)
 	if s.mcp.GetTool("create_project") != nil {
 		return // ja registradas
 	}
@@ -188,6 +209,215 @@ func (s *Server) RegisterTools() {
 			mcp.WithDescription("List the persisted live match/replace rules of the active target (reloaded from disk)."),
 		),
 		s.wrapTool("list_match_replace", s.toolListMatchReplace),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("intruder_start",
+			mcp.WithDescription("Launch an asynchronous Intruder fuzzing job (v3). Replays a captured base request (base_request_id from list_requests) once per generated case. attack_type: sniper (each payload set over one position at a time), battering_ram (same payload to all positions per row), pitchfork (parallel sets, row i uses payload i of each), cluster_bomb (Cartesian product). positions: array selecting injection points, e.g. 'url', 'body', 'query:<param>', 'header:<name>'. Payloads come from payload_sets (array of arrays, one per position), payload_set (builtin xss|sqli|traversal|redirect applied to every position), or payloads (single array applied to every position). throttling via throttle_rps (0=unlimited). Every replay is scope-guarded and persisted as a new request. Returns a job_id; poll with intruder_status/intruder_results. Cap: 2000 cases per job."),
+			mcp.WithNumber("base_request_id", mcp.Required()),
+			mcp.WithString("attack_type", mcp.Required(), mcp.Enum("sniper", "battering_ram", "pitchfork", "cluster_bomb")),
+			mcp.WithArray("positions", mcp.Required(), mcp.WithStringItems()),
+			mcp.WithArray("payload_sets"),
+			mcp.WithString("payload_set", mcp.Enum("xss", "sqli", "traversal", "redirect")),
+			mcp.WithArray("payloads", mcp.WithStringItems()),
+			mcp.WithNumber("throttle_rps"),
+		),
+		s.wrapTool("intruder_start", s.toolIntruderStart),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("intruder_status",
+			mcp.WithDescription("Check the status/progress of an intruder job by job_id from intruder_start. Returns status (queued|running|done|cancelled|error), done/total_cases, anomalies count."),
+			mcp.WithString("job_id", mcp.Required()),
+		),
+		s.wrapTool("intruder_status", s.toolIntruderStatus),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("intruder_results",
+			mcp.WithDescription("Fetch the results of a completed intruder job (job_id from intruder_start). Returns aggregated by_status counts plus the full anomalous cases list (status, resp_len, replay_id). Optional 'grep' returns only rows whose new response body contains the substring. Results are token-frugal — no full bodies."),
+			mcp.WithString("job_id", mcp.Required()),
+			mcp.WithString("grep"),
+		),
+		s.wrapTool("intruder_results", s.toolIntruderResults),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("intruder_cancel",
+			mcp.WithDescription("Cancel a running intruder job by job_id from intruder_start."),
+			mcp.WithString("job_id", mcp.Required()),
+		),
+		s.wrapTool("intruder_cancel", s.toolIntruderCancel),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("macro_record",
+			mcp.WithDescription("Save a macro (session-handling chain, v3) under a name for later macro_play. A macro is an ordered list of steps; each step: method, url, headers (optional map), body (optional), extractors (optional array of {name, pattern} regex with 1 capture group to pull session variables from the step's response). Variables are referenced in later steps as {name}. Steps are executed under the active target's scope guard."),
+			mcp.WithString("name", mcp.Required()),
+			mcp.WithArray("steps", mcp.Required()),
+		),
+		s.wrapTool("macro_record", s.toolMacroRecord),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("macro_play",
+			mcp.WithDescription("Execute a saved macro by name (from macro_record) to establish/maintain a session. Runs each step against the active target under scope guard, extracting {var} from responses via the step's extractors and substituting into later steps. Returns the session_id, steps_run, last status, and extracted vars. Pass an existing session_id to continue reusing its variables."),
+			mcp.WithString("name", mcp.Required()),
+			mcp.WithString("session_id"),
+		),
+		s.wrapTool("macro_play", s.toolMacroPlay),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("macro_list",
+			mcp.WithDescription("List the names of all saved macros."),
+		),
+		s.wrapTool("macro_list", s.toolMacroList),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("scan_passive_run",
+			mcp.WithDescription("Run the passive scanner (v4) over all ALREADY captured requests of the active target — sends NOTHING to the host, it only reads stored traffic. Detectors: reflected XSS, SQLi error patterns, SSRF hints, open redirect, secrets in JS, IDOR hints. Results are persisted as findings (list_findings). Returns a job_id; poll with scan_passive_status."),
+		),
+		s.wrapTool("scan_passive_run", s.toolScanPassiveRun),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("scan_passive_status",
+			mcp.WithDescription("Check the progress of a passive scan job by job_id from scan_passive_run. Returns status, requests scanned, and hit counts per finding type."),
+			mcp.WithString("job_id", mcp.Required()),
+		),
+		s.wrapTool("scan_passive_status", s.toolScanPassiveStatus),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("list_findings",
+			mcp.WithDescription("List findings of the active target, optionally filtered by type (XSS|IDOR|SQLi|SSRF|redirect|secret|other) and severity (info|low|med|high|crit). Ordered by severity then recency. Follow up with get_finding_detail."),
+			mcp.WithString("type"),
+			mcp.WithString("severity", mcp.Enum("info", "low", "med", "high", "crit")),
+		),
+		s.wrapTool("list_findings", s.toolListFindings),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("get_finding_detail",
+			mcp.WithDescription("Get the full detail of one finding (finding_id from list_findings): type, severity, url, request_id, status, notes, and structured evidence."),
+			mcp.WithNumber("finding_id", mcp.Required()),
+		),
+		s.wrapTool("get_finding_detail", s.toolGetFindingDetail),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("finding_set_status",
+			mcp.WithDescription("Update the lifecycle status of a finding (finding_id from list_findings): open|triaged|confirmed|false-positive|closed."),
+			mcp.WithNumber("finding_id", mcp.Required()),
+			mcp.WithString("status", mcp.Required(), mcp.Enum("open", "triaged", "confirmed", "false-positive", "closed")),
+		),
+		s.wrapTool("finding_set_status", s.toolFindingSetStatus),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("get_sitemap",
+			mcp.WithDescription("Get the passive sitemap of the active target: deduplicated endpoint tree (method + path, dynamic segments collapsed to {id}) with hit counts, derived from captured traffic."),
+		),
+		s.wrapTool("get_sitemap", s.toolGetSitemap),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("scan_active_start",
+			mcp.WithDescription("Run the ACTIVE scanner (v4.1): sends safe non-destructive payloads (XSS/SQLi/SSRF/redirect test strings) to the active target in-scope with aggressive throttle, to detect reflection. REQUIRES double opt-in: server started with MCP_PROXY_ACTIVE=1 AND confirmed=true. Reflected payloads become findings."),
+			mcp.WithBoolean("confirmed", mcp.Required()),
+			mcp.WithNumber("throttle_rps"),
+		),
+		s.wrapTool("scan_active_start", s.toolScanActiveStart),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("scan_active_status",
+			mcp.WithDescription("Check the progress of an active scan job (job_id from scan_active_start)."),
+			mcp.WithString("job_id", mcp.Required()),
+		),
+		s.wrapTool("scan_active_status", s.toolScanActiveStatus),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("crawl_start",
+			mcp.WithDescription("Start an active crawler against the active target to discover same-host URLs. Requires MCP_PROXY_ACTIVE=1 and confirmed=true. (Crawler harness implementation pending; use scan_passive_run + get_sitemap meanwhile.)"),
+			mcp.WithBoolean("confirmed", mcp.Required()),
+		),
+		s.wrapTool("crawl_start", s.toolCrawlStart),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("decode",
+			mcp.WithDescription("Decode a value in a format: base64, url, hex, html, jwt (payload), gzip."),
+			mcp.WithString("format", mcp.Required(), mcp.Enum("base64", "url", "hex", "html", "jwt", "gzip")),
+			mcp.WithString("input", mcp.Required()),
+		),
+		s.wrapTool("decode", s.toolDecode),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("encode",
+			mcp.WithDescription("Encode a value in a format: base64, url, hex, html, jwt (payload), gzip."),
+			mcp.WithString("format", mcp.Required(), mcp.Enum("base64", "url", "hex", "html", "jwt", "gzip")),
+			mcp.WithString("input", mcp.Required()),
+		),
+		s.wrapTool("encode", s.toolEncode),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("compare",
+			mcp.WithDescription("Visual diff of two captured requests/responses. kind: request|response|headers."),
+			mcp.WithNumber("left_id", mcp.Required()),
+			mcp.WithNumber("right_id", mcp.Required()),
+			mcp.WithString("kind", mcp.Enum("request", "response", "headers")),
+		),
+		s.wrapTool("compare", s.toolCompare),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("tag_request",
+			mcp.WithDescription("Attach a custom tag to a captured request (Logger++)."),
+			mcp.WithNumber("request_id", mcp.Required()),
+			mcp.WithString("tag", mcp.Required()),
+		),
+		s.wrapTool("tag_request", s.toolTagRequest),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("add_comment",
+			mcp.WithDescription("Attach a timestamped comment to a captured request (Logger++)."),
+			mcp.WithNumber("request_id", mcp.Required()),
+			mcp.WithString("comment", mcp.Required()),
+		),
+		s.wrapTool("add_comment", s.toolAddComment),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("list_tags",
+			mcp.WithDescription("List all tags in use on the active target (Logger++)."),
+		),
+		s.wrapTool("list_tags", s.toolListTags),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("ext_list",
+			mcp.WithDescription("List known extensions and their enabled status in the active project (Extensions API v5)."),
+		),
+		s.wrapTool("ext_list", s.toolExtList),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("ext_enable",
+			mcp.WithDescription("Enable an extension in the active project (allowlist)."),
+			mcp.WithString("ext_name", mcp.Required()),
+		),
+		s.wrapTool("ext_enable", s.toolExtEnable),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("ext_disable",
+			mcp.WithDescription("Disable an extension in the active project (allowlist)."),
+			mcp.WithString("ext_name", mcp.Required()),
+		),
+		s.wrapTool("ext_disable", s.toolExtDisable),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("report_export_markdown",
+			mcp.WithDescription("Export findings of the active target as a HackerOne-ready Markdown report. Returns the file path."),
+			mcp.WithString("status_filter", mcp.Enum("open", "triaged", "confirmed", "false-positive", "closed")),
+		),
+		s.wrapTool("report_export_markdown", s.toolReportMarkdown),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("report_export_html",
+			mcp.WithDescription("Export findings of the active target as an HTML report. Returns the file path."),
+			mcp.WithString("status_filter", mcp.Enum("open", "triaged", "confirmed", "false-positive", "closed")),
+		),
+		s.wrapTool("report_export_html", s.toolReportHTML),
+	)
+	s.mcp.AddTool(
+		mcp.NewTool("report_export_pdf",
+			mcp.WithDescription("Export findings of the active target as a PDF report (requires chrome headless; falls back to HTML with guidance)."),
+			mcp.WithString("status_filter", mcp.Enum("open", "triaged", "confirmed", "false-positive", "closed")),
+		),
+		s.wrapTool("report_export_pdf", s.toolReportPDF),
 	)
 }
 

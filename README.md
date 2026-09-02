@@ -148,6 +148,13 @@ Restart Claude Desktop. You now have access to these tools:
 | `replay_request`      | Re-send with url/method/header/body overrides           |
 | `fuzz_request`        | Intruder-lite: inject payloads at a point, flag anomalies |
 | `set_match_replace` / `list_match_replace` | Live in-flight request rewriting   |
+| `intruder_start` / `intruder_status` / `intruder_results` / `intruder_cancel` | Full Intruder (sniper, battering ram, pitchfork, cluster bomb) |
+| `macro_record` / `macro_play` / `macro_list` | Session handling: macro chains + variable extraction |
+| `scan_passive_run` / `scan_passive_status` | Passive scanner (XSS, SQLi, SSRF, redirect, secrets, IDOR hints) |
+| `list_findings` / `get_finding_detail` / `finding_set_status` | Findings lifecycle (open→closed) |
+| `get_sitemap` | Passive endpoint tree |
+| `scan_active_start` / `scan_active_status` | Active scanner (double opt-in: `MCP_PROXY_ACTIVE=1` + `confirmed=true`) |
+| `crawl_start` | Active crawler discovery |
 
 Then in Claude:
 
@@ -268,18 +275,19 @@ This is **v2.x** of the project. Done so far:
 - ✅ **v2.0**: Workspaces (projects + targets), per-target storage, management MCP tools.
 - ✅ **v2.1**: Read/replay tools (`list_requests`, `get_request_detail`, `search_bodies`, `replay_request`, `set_scope`), endpoint map, response diff & summarize.
 - ✅ **v2.2**: Live match/replace (`set_match_replace`) and intruder-lite fuzzing (`fuzz_request`) — 18 MCP tools total.
+- ✅ **v3.0**: Full Intruder (`intruder_start/status/results/cancel` with 4 attack types) + macro/session handling (`macro_record/play/list`) — 25 MCP tools total.
+- ✅ **v4.0**: Passive scanner (`scan_passive_run/status`, `list_findings`, `get_finding_detail`, `finding_set_status`) + passive sitemap (`get_sitemap`) — 31 MCP tools total.
+- ✅ **v4.1**: Active scanner (`scan_active_start/status`, non-destructive payloads, double opt-in via `MCP_PROXY_ACTIVE=1` + `confirmed=true`) + crawler (`crawl_start`, same-host, robots-aware) — 34 MCP tools total.
 
 Coming next (see PRD for full list):
 
-- 🔜 **v3** — Macro/session handling, custom request editor, fuzz wordlists.
-- 🔜 **v4** — Passive scanner (reflected XSS, IDOR, SQLi, SSRF, secrets in JS) + sitemap.
 - 🔜 **v5** — Decoder, comparer, extensions API (Go plugins).
 
 ---
 
 ## 🤝 Contributing
 
-Bug reports and PRs welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first (TBD — repo is new). For security issues, please disclose privately.
+Bug reports and PRs welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first. For security issues, please disclose privately. See [MELHORIAS.md](MELHORIAS.md) for the improvement roadmap and technical debt assessment.
 
 ## 📄 License
 

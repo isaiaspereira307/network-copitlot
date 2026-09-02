@@ -9,8 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite" // driver puro-Go, sem CGO
 )
@@ -43,6 +45,10 @@ func OpenSQLite(path string) (*SQLiteStore, error) {
 			db.Close()
 			return nil, fmt.Errorf("migrate column %s: %w", col.name, err)
 		}
+	}
+	if _, err := db.Exec(findingSchemaSQL); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("apply findings schema: %w", err)
 	}
 	return &SQLiteStore{db: db}, nil
 }
@@ -350,6 +356,65 @@ func (s *SQLiteStore) Count() (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+// SetRequestTags substitui as tags de um request (Logger++ v5.0).
+func (s *SQLiteStore) SetRequestTags(id int64, tags []string) error {
+	j, err := marshalJSON(tags)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE requests SET tags = ? WHERE id = ?`, j, id)
+	return err
+}
+
+// AddRequestNote adiciona um comentario (anexo com TS) ao campo notes.
+func (s *SQLiteStore) AddRequestNote(id int64, note string) error {
+	r, err := s.Get(id)
+	if err != nil {
+		return err
+	}
+	existing := r.Notes
+	if existing != "" {
+		existing += "\n"
+	}
+	existing += fmt.Sprintf("[%d] %s", time.Now().UnixMilli(), note)
+	_, err = s.db.Exec(`UPDATE requests SET notes = ? WHERE id = ?`, existing, id)
+	return err
+}
+
+// ListTags devolve todas as tags em uso (deduplicadas).
+func (s *SQLiteStore) ListTags() ([]string, error) {
+	rows, err := s.db.Query(`SELECT tags FROM requests WHERE tags IS NOT NULL AND tags != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	set := map[string]bool{}
+	for rows.Next() {
+		var j string
+		if err := rows.Scan(&j); err != nil {
+			return nil, err
+		}
+		if j == "" {
+			continue
+		}
+		var tags []string
+		if err := json.Unmarshal([]byte(j), &tags); err != nil {
+			continue
+		}
+		for _, t := range tags {
+			if t != "" {
+				set[t] = true
+			}
+		}
+	}
+	var out []string
+	for t := range set {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out, nil
 }
 
 type scanner interface{ Scan(dest ...any) error }
