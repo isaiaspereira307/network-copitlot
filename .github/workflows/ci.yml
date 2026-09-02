@@ -23,3 +23,14 @@ jobs:
         run: go test -race -count=1 ./...
       - name: Build
         run: CGO_ENABLED=0 go build -trimpath -o /dev/null ./cmd/mcp-proxy
+      - name: Smoke (MCP stdio e2e)
+        run: |
+          CGO_ENABLED=0 go build -trimpath -o ./mcp-proxy ./cmd/mcp-proxy
+          {
+            printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}'
+            printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+            printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+          } | timeout 30 ./mcp-proxy > smoke_out.jsonl
+          grep -q '"export_curl"' smoke_out.jsonl
+          grep -q '"jwt_resign"' smoke_out.jsonl
+          grep -q '"get_active_context"' smoke_out.jsonl
