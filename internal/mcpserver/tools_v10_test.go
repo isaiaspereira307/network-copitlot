@@ -58,3 +58,33 @@ func TestToolExportCurl_NoActiveTarget(t *testing.T) {
 		t.Error("esperava erro sem alvo ativo")
 	}
 }
+
+func TestToolExportCurl_HeredocLargeBody(t *testing.T) {
+	s, _ := newTestServer(t)
+	st := setupExportTarget(t, s)
+	body := strings.Repeat(`{"padrao":"valor-grande"}`, 11) // 22*11 = 242 bytes > 200
+	if len(body) <= 200 {
+		t.Fatalf("corpo de teste deve ter >200 bytes, tem %d", len(body))
+	}
+	id, err := st.Insert(&store.Request{
+		Method: "POST", URL: "https://api.alvo.com/v1/feedback",
+		ReqHeaders: map[string][]string{"Content-Type": {"application/json"}},
+		ReqBody:   []byte(body), Status: 200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.toolExportCurl(context.Background(), map[string]any{"id": float64(id)})
+	if err != nil {
+		t.Fatalf("toolExportCurl: %v", err)
+	}
+	if !strings.Contains(out, "--data-binary @- <<'EOF'") {
+		t.Errorf("esperava forma heredoc, saida:\n%s", out)
+	}
+	if !strings.HasSuffix(out, "EOF") {
+		t.Errorf("esperava saida terminando em EOF, termina em %q", out[max(0, len(out)-20):])
+	}
+	if !strings.Contains(out, body) {
+		t.Error("corpo grande ausente na saida")
+	}
+}
