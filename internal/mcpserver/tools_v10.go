@@ -18,6 +18,36 @@ func registerV10Tools(s *Server) {
 	s.tools["jwt_resign"] = s.toolJwtResign
 }
 
+// shellQuote envolve s em aspas simples com escaping POSIX sh (' -> '\''),
+// impedindo que valores capturados quebrem o comando ou executem shell.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// heredocDelim devolve um delimitador que nenhuma linha do corpo contem.
+func heredocDelim(id int64, body string) string {
+	delim := fmt.Sprintf("EOF_%d", id)
+	for n := 2; ; n++ {
+		candidate := delim
+		if n > 2 {
+			candidate = fmt.Sprintf("%s_%d", delim, n)
+		}
+		if !lineExists(body, candidate) {
+			return candidate
+		}
+	}
+}
+
+func lineExists(body, line string) bool {
+	for _, l := range strings.Split(body, "\n") {
+		l = strings.TrimSuffix(l, "\r")
+		if l == line {
+			return true
+		}
+	}
+	return false
+}
+
 // toolExportCurl reconstrói um request capturado como comando curl pronto.
 func (s *Server) toolExportCurl(ctx context.Context, args map[string]any) (string, error) {
 	id, ok := argInt(args, "id")
@@ -36,17 +66,18 @@ func (s *Server) toolExportCurl(ctx context.Context, args map[string]any) (strin
 		return "", err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "curl -X %s '%s'", r.Method, r.URL)
+	fmt.Fprintf(&b, "curl -X %s %s", shellQuote(r.Method), shellQuote(r.URL))
 	for k, vs := range r.ReqHeaders {
 		for _, v := range vs {
-			fmt.Fprintf(&b, " -H '%s: %s'", k, v)
+			fmt.Fprintf(&b, " -H %s", shellQuote(k+": "+v))
 		}
 	}
 	if len(r.ReqBody) > 0 {
 		if len(r.ReqBody) <= 200 {
-			fmt.Fprintf(&b, " --data '%s'", string(r.ReqBody))
+			fmt.Fprintf(&b, " --data %s", shellQuote(string(r.ReqBody)))
 		} else {
-			fmt.Fprintf(&b, " --data-binary @- <<'EOF'\n%s\nEOF", string(r.ReqBody))
+			delim := heredocDelim(id, string(r.ReqBody))
+			fmt.Fprintf(&b, " --data-binary @- <<'%s'\n%s\n%s", delim, string(r.ReqBody), delim)
 		}
 	}
 	return b.String(), nil

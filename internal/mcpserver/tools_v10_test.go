@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -38,7 +39,7 @@ func TestToolExportCurl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("toolExportCurl: %v", err)
 	}
-	for _, want := range []string{"curl", "-X POST", "https://api.alvo.com/v1/login", "-H 'Authorization: Bearer tok123'", "--data"} {
+	for _, want := range []string{"curl", "-X 'POST'", "'https://api.alvo.com/v1/login'", "-H 'Authorization: Bearer tok123'", "--data"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("curl output missing %q:\n%s", want, out)
 		}
@@ -120,14 +121,54 @@ func TestToolExportCurl_HeredocLargeBody(t *testing.T) {
 	if err != nil {
 		t.Fatalf("toolExportCurl: %v", err)
 	}
-	if !strings.Contains(out, "--data-binary @- <<'EOF'") {
-		t.Errorf("esperava forma heredoc, saida:\n%s", out)
+	delim := fmt.Sprintf("EOF_%d", id)
+	if !strings.Contains(out, "--data-binary @- <<'"+delim+"'") {
+		t.Errorf("esperava forma heredoc com delimitador unico %q, saida:\n%s", delim, out)
 	}
-	if !strings.HasSuffix(out, "EOF") {
-		t.Errorf("esperava saida terminando em EOF, termina em %q", out[max(0, len(out)-20):])
+	if !strings.HasSuffix(out, delim) {
+		t.Errorf("esperava saida terminando em %s, termina em %q", delim, out[max(0, len(out)-20):])
 	}
 	if !strings.Contains(out, body) {
 		t.Error("corpo grande ausente na saida")
+	}
+}
+
+func TestToolExportCurl_ShellInjection(t *testing.T) {
+	s, _ := newTestServer(t)
+	st := setupExportTarget(t, s)
+	body := strings.Repeat(`{"padrao":"valor-grande"}`, 10) + "\nEOF\nrm -rf / #payload"
+	if len(body) <= 200 {
+		t.Fatalf("corpo de teste deve ter >200 bytes, tem %d", len(body))
+	}
+	id, err := st.Insert(&store.Request{
+		Method: "POST", URL: "https://api.alvo.com/v1/it's",
+		ReqHeaders: map[string][]string{"Cookie": {"sess=a'b"}},
+		ReqBody:   []byte(body), Status: 200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := s.toolExportCurl(context.Background(), map[string]any{"id": float64(id)})
+	if err != nil {
+		t.Fatalf("toolExportCurl: %v", err)
+	}
+	// aspas simples devem estar escapadas como '\'' (URL, headers)
+	if !strings.Contains(out, `'\''`) {
+		t.Errorf("esperava escaping '\\'' na saida:\n%s", out)
+	}
+	if strings.Contains(out, "it's") {
+		t.Errorf("URL com aspa crua na saida:\n%s", out)
+	}
+	if strings.Contains(out, "a'b") {
+		t.Errorf("header com aspa crua na saida:\n%s", out)
+	}
+	// delimitador unico EOF_<id>: linha "EOF" do corpo nao pode encerrar heredoc
+	delim := fmt.Sprintf("EOF_%d", id)
+	if !strings.Contains(out, "<<'"+delim+"'") {
+		t.Errorf("esperava delimitador unico %q:\n%s", delim, out)
+	}
+	if !strings.HasSuffix(out, delim) {
+		t.Errorf("esperava saida terminando em %s", delim)
 	}
 }
 
