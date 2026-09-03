@@ -7,7 +7,7 @@
 [![MCP](https://img.shields.io/badge/MCP-compatible-purple)](https://modelcontextprotocol.io)
 [![Platform: Linux/macOS/Windows](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)]()
 
-A native-MCP interception proxy. Point your browser at it, browse your authorized target, and an AI assistant (Claude) reads, searches, replays, fuzzes, and rewrites captured transactions over MCP — 18 tools, no GUI.
+A native-MCP interception proxy. Point your browser at it, browse your authorized target, and an AI assistant (Claude) reads, searches, replays, fuzzes, and rewrites captured transactions over MCP — 50 tools, no GUI.
 
 ```
   browser ─── HTTP/HTTPS ──▶  mcp-proxy  ──── upstream
@@ -155,6 +155,11 @@ Restart Claude Desktop. You now have access to these tools:
 | `get_sitemap` | Passive endpoint tree |
 | `scan_active_start` / `scan_active_status` | Active scanner (double opt-in: `MCP_PROXY_ACTIVE=1` + `confirmed=true`) |
 | `crawl_start` | Active crawler discovery |
+| `decode` / `encode` | Multi-format encode/decode: base64, url, hex, html, jwt, gzip |
+| `compare` | Visual diff of two captured requests/responses (request, response, or headers) |
+| `tag_request` / `add_comment` / `list_tags` | Request organization: custom tags + timestamped comments (Logger++) |
+| `ext_list` / `ext_enable` / `ext_disable` | Extensions manager: enable/disable extensions per project (allowlist) |
+| `report_export_markdown` / `report_export_html` / `report_export_pdf` | HackerOne-ready findings reports (PDF uses headless chrome, falls back to HTML) |
 | `export_curl` | Rebuild a captured request as a ready-to-paste curl command |
 | `export_har` | Export the active target as HAR 1.2 (metadata only) |
 | `jwt_decode` | Decode a JWT with attack-surface warnings (alg=none, empty sig, expired) |
@@ -188,7 +193,7 @@ Claude calls `get_active_context`. From there you can list, search, diff, replay
                             │  └────────┘  │
                             │              │
                             │  ┌────────┐  │
-                            │  │  MCP   │──┼── 18 tools: read/search/diff/replay/fuzz/rewrite
+                            │  │  MCP   │──┼── 50 tools: read/search/diff/replay/fuzz/rewrite
                             │  └────────┘  │
                             └──────────────┘
 ```
