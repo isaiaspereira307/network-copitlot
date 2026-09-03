@@ -70,7 +70,7 @@ Primeira execução gera a CA em `~/.mcp-proxy/ca/cert.pem` — instale como roo
 }
 ```
 
-Reinicie o Claude Desktop. As 18 tools abaixo ficam disponíveis.
+Reinicie o Claude Desktop. As 50 tools MCP ficam disponíveis.
 
 ---
 
@@ -89,7 +89,7 @@ Todas operam sobre o **projeto/alvo ativos**. Saídas são token-frugais: pagina
 | `list_targets` | — | alvos do projeto |
 | `set_active_target` | `host` | alvo ativo |
 | `set_scope` | `in_scope[]` (obrigatório; `[]` limpa) | escopo persistido (proxy recarrega vivo) |
-| `get_active_context` | — | projeto, alvo, contagem de requests |
+| `get_active_context` | — | briefing de sessão: projeto, alvo, requests, histograma de status, top 5 hosts, endpoints, scope |
 
 ### Leitura de tráfego
 
@@ -197,3 +197,25 @@ Match/replace **pontual** (um request só) continua via overrides do `replay_req
 mcp-proxy proxy --addr 127.0.0.1:8080   # logs de escuta no startup
 cat ~/.mcp-proxy/audit.log              # trilha de auditoria (segredos redigidos)
 ```
+
+---
+
+## 7. v5.1 — CTF & briefing
+
+Tools de CTF + briefing rico de sessão. `jwt_resign` e `jwt_decode` são **offline** — nenhum tráfego é enviado a alvo algum. `jwt_resign` exige `confirmed: true`.
+
+| Tool | Args | Retorna |
+|---|---|---|
+| `export_curl` | `id` | comando `curl` pronto pra colar no terminal (heredoc para bodies grandes) |
+| `export_har` | — | HAR 1.2 do alvo ativo, metadata only (sem bodies) — interop com Burp/devtools; caminho do arquivo |
+| `jwt_decode` | `token` | header, payload, signature + warnings de ataque: `alg=none`, assinatura vazia, `exp` expirado (não verifica a assinatura) |
+| `jwt_resign` | `token`, `alg`(none\|hs256), `secret?`, `confirmed:true` | JWT re-assinado offline: `none` derruba a assinatura, `hs256` assina com o secret fornecido |
+| `get_active_context` | — | briefing de sessão em <500 tokens: projeto, alvo, contagem, histograma de status, top 5 hosts, endpoints, scope |
+
+Exemplos de pergunta ao assistente:
+
+> "Me dá o `curl` do request 42 — vou reproduzir no terminal."
+> "Exporta o alvo inteiro como HAR pra eu importar no Burp."
+> "`jwt_decode` nesse token do cookie de sessão — tem `alg=none` ou assinatura vazia?"
+> "Re-assina esse JWT com `hs256` e secret `secret1`, `confirmed: true` — quero testar se o server aceita assinatura fraca."
+> "Me dá o briefing da sessão: quantos requests, top hosts, endpoints, tem scope definido?"

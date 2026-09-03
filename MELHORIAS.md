@@ -64,6 +64,8 @@ Já existe a lógica em `scope.go`; falta a tool. Parâmetros: `in_scope[]`,
 
 > **Estimativa**: ~1 dia. Toda a plumbing (store, scope, audit) já existe.
 
+> ✅ Entregue — ver roadmap v5.1 no README.
+
 ---
 
 ## 2. Bloco P1 — economia de tokens de nível profissional
@@ -79,11 +81,15 @@ em ~30 linhas em vez de 5.000.
 - Um app real tem ~80 endpoints únicos e 5.000 hits. A IA quer os 80.
 - Normalização: regex para segmentos numéricos, UUIDs, hex longo, base64.
 
+> ✅ Entregue — ver roadmap v5.1 no README.
+
 ### 2.2 Diff de respostas (`diff_requests`)
 Parâmetros: `id_a`, `id_b`, `mode=status|headers|body`.
 Retorno: diff unificado compacto (só linhas alteradas).
 - Essencial para IDOR ("resposta com meu token vs. token da vítima"), para detectar
   reflection, para auth bypass. Diff de 5 linhas em vez de 2 bodies inteiros.
+
+> ✅ Entregue — ver roadmap v5.1 no README.
 
 ### 2.3 Resumo automático de resposta (`summarize_response`)
 Para respostas grandes (HTML/JS), retornar estrutura extraída em vez do raw:
@@ -92,6 +98,8 @@ Para respostas grandes (HTML/JS), retornar estrutura extraída em vez do raw:
 - JS: strings que parecem endpoints/URLs/tokens, chamadas `fetch`/`XHR`.
 - Isso troca 200k tokens de body por 2k de sinal acionável.
 
+> ✅ Entregue — ver roadmap v5.1 no README.
+
 ### 2.4 Content-type gating no proxy (economia na origem)
 Hoje `onResponse` grava **todo** body in-scope. Adicionar política configurável:
 - Não persistir body de `image/*`, `font/*`, `video/*`, `text/css` (só metadados).
@@ -99,11 +107,15 @@ Hoje `onResponse` grava **todo** body in-scope. Adicionar política configuráve
 - Reduz o DB em 10-50x e evita que a IA sequer veja lixo binário.
 - Ver `internal/proxy/proxy.go:203` (`if cap.inScope`).
 
+> ✅ Entregue — ver roadmap v5.1 no README.
+
 ### 2.5 Perfil de resposta / anomaly hints
 Coluna extra ou tool que marca requests "interessantes" heuristicamente:
 status 5xx, respostas com `error/exception/stack trace`, tamanhos anômalos,
 headers de debug (`X-Powered-By`, `Server`, `X-Debug`), `Set-Cookie` sem flags.
 A IA pede `list_requests?interesting=true` e vai direto ao sinal.
+
+> ✅ Entregue parcialmente — anomaly hints no `fuzz_request` + briefing de sessão no `get_active_context` (v5.1). Ver roadmap no README.
 
 ---
 
@@ -120,12 +132,16 @@ O PRD já lista isso; reordeno por **valor/token para uma IA**:
 | Baixa | **Decoder/comparer** (v5) | `decode`, `encode`, `compare` | Útil em CTF (base64/JWT/hex chains). A IA já faz muito disso nativamente. |
 | Baixa | **Macros/sessão** (v3) | `macro_record/play` | Re-login automático para replays autenticados. Complexo; adiar. |
 
+> ✅ Entregue — ver roadmap v5.1 no README.
+
 ### 3.1 CTF-specific (não está no PRD, mas o usuário pediu)
 - **JWT tool**: `jwt_decode`/`jwt_resign` (alg=none, key confusion, weak secret). CTF
   web tem isso em 1 de cada 3 desafios.
 - **`export_curl`**: dado um `id`, retorna o comando `curl` equivalente. O hunter
   cola no terminal; a IA raciocina sobre um one-liner em vez de um dump de headers.
 - **`export_har`**: exporta o target inteiro como HAR — interop com outras tools.
+
+> ✅ Entregue — ver roadmap v5.1 no README.
 
 ---
 
@@ -172,6 +188,10 @@ Coisas que fazem a IA usar as tools *bem* (não só existir):
 - **`system prompt` sugerido no MCP config**: instruir a IA a sempre paginar,
   sempre usar `search_bodies` antes de `get_request_detail`, nunca pedir body full
   sem range.
+
+> ✅ Entregue parcialmente — descrições ricas em inglês, retornos estruturados,
+> briefing (`get_active_context`) e guia do operador no README feitos; falta o
+> system prompt sugerido no MCP config. Ver roadmap v5.1 no README.
 
 ---
 

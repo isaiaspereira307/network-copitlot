@@ -138,7 +138,7 @@ Restart Claude Desktop. You now have access to these tools:
 | `create_project` / `list_projects` / `set_active_project` | Manage engagements          |
 | `add_target` / `list_targets` / `set_active_target`       | Manage targets (`confirmed: true` required) |
 | `set_scope`           | Persist in-scope patterns (proxy reloads live)          |
-| `get_active_context`  | Show current project, target, request count             |
+| `get_active_context`  | Session briefing: status histogram, top hosts, endpoints, scope |
 | `list_requests`       | Paginate captured requests (summaries, no bodies)       |
 | `get_request_detail`  | Full request/response (bodies truncated + paged)        |
 | `search_bodies`       | Regex/substring search across req/resp bodies           |
@@ -155,6 +155,10 @@ Restart Claude Desktop. You now have access to these tools:
 | `get_sitemap` | Passive endpoint tree |
 | `scan_active_start` / `scan_active_status` | Active scanner (double opt-in: `MCP_PROXY_ACTIVE=1` + `confirmed=true`) |
 | `crawl_start` | Active crawler discovery |
+| `export_curl` | Rebuild a captured request as a ready-to-paste curl command |
+| `export_har` | Export the active target as HAR 1.2 (metadata only) |
+| `jwt_decode` | Decode a JWT with attack-surface warnings (alg=none, empty sig, expired) |
+| `jwt_resign` | Re-sign a JWT offline (none/HS256) — requires `confirmed: true` |
 
 Then in Claude:
 
@@ -269,7 +273,7 @@ Read [docs/proxy.md](docs/proxy.md) for the threat model and the full PRD lives 
 
 ## 🗺️ Roadmap
 
-This is **v2.x** of the project. Done so far:
+Done so far:
 
 - ✅ **v1**: proxy MITM + CA + per-target storage + hard scope guard.
 - ✅ **v2.0**: Workspaces (projects + targets), per-target storage, management MCP tools.
@@ -278,10 +282,10 @@ This is **v2.x** of the project. Done so far:
 - ✅ **v3.0**: Full Intruder (`intruder_start/status/results/cancel` with 4 attack types) + macro/session handling (`macro_record/play/list`) — 25 MCP tools total.
 - ✅ **v4.0**: Passive scanner (`scan_passive_run/status`, `list_findings`, `get_finding_detail`, `finding_set_status`) + passive sitemap (`get_sitemap`) — 31 MCP tools total.
 - ✅ **v4.1**: Active scanner (`scan_active_start/status`, non-destructive payloads, double opt-in via `MCP_PROXY_ACTIVE=1` + `confirmed=true`) + crawler (`crawl_start`, same-host, robots-aware) — 34 MCP tools total.
+- ✅ **v5**: Decoder (`decode`/`encode`), comparer, extensions API, reports (markdown/html/pdf), tags/comments — 46 MCP tools total.
+- ✅ **v5.1**: CTF tools (`export_curl`, `export_har`, `jwt_decode`, `jwt_resign`) + rich session briefing (`get_active_context`) + binary smoke test in CI — 50 MCP tools total.
 
-Coming next (see PRD for full list):
-
-- 🔜 **v5** — Decoder, comparer, extensions API (Go plugins).
+All roadmap phases delivered. See MELHORIAS.md for future ideas.
 
 ---
 
